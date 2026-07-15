@@ -41,6 +41,10 @@ export async function createAdminServer(payload: {
   return data
 }
 
+export async function deleteAdminServer(id: number): Promise<void> {
+  await apiClient.delete(`/admin/servers/${id}`)
+}
+
 export async function clientServerPower(id: number, action: PowerAction): Promise<void> {
   await apiClient.post(`/client/servers/${id}/${action}`)
 }
@@ -110,8 +114,14 @@ export async function deleteBackup(serverId: number, backupId: number): Promise<
   await apiClient.delete(`/client/servers/${serverId}/backups/${backupId}`)
 }
 
-export async function fetchDatabases(serverId: number) {
+export async function fetchDatabases(serverId: number): Promise<{
+  data: Array<Record<string, unknown>>
+  phpmyadmin_url?: string | null
+}> {
   const { data } = await apiClient.get(`/client/servers/${serverId}/databases`)
+  if (Array.isArray(data)) {
+    return { data, phpmyadmin_url: null }
+  }
   return data
 }
 
@@ -120,6 +130,14 @@ export async function createDatabase(
   payload: { name: string; username?: string; password?: string },
 ) {
   const { data } = await apiClient.post(`/client/servers/${serverId}/databases`, payload)
+  return data
+}
+
+export async function revealDatabase(serverId: number, databaseId: number) {
+  const { data } = await apiClient.get<{
+    password: string
+    phpmyadmin_url?: string | null
+  }>(`/client/servers/${serverId}/databases/${databaseId}/reveal`)
   return data
 }
 

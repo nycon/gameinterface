@@ -30,7 +30,7 @@ const form = reactive({
   user_id: 0,
   node_id: 0,
   game_template_id: 0,
-  memory_max: '2G',
+  memory_max: '2048M',
   cpu_quota: '100%',
 })
 
@@ -54,7 +54,9 @@ async function loadMeta() {
   nodes.value = n.data.data ?? n.data
   if (users.value[0]) form.user_id = users.value[0].id
   if (nodes.value[0]) form.node_id = nodes.value[0].id
-  if (templates.value[0]) form.game_template_id = templates.value[0].id
+  const mc = templates.value.find((tpl) => tpl.slug === 'minecraft')
+  if (mc) form.game_template_id = mc.id
+  else if (templates.value[0]) form.game_template_id = templates.value[0].id
 }
 
 async function createServer() {

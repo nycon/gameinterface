@@ -74,6 +74,21 @@ export const useServersStore = defineStore('servers', () => {
     }
   }
 
+  async function deleteServer(id: number) {
+    actionLoading.value = id
+    error.value = null
+    try {
+      await serversApi.deleteAdminServer(id)
+      servers.value = servers.value.filter((s) => s.id !== id)
+      if (currentServer.value?.id === id) currentServer.value = null
+    } catch (err) {
+      error.value = getErrorMessage(err, 'Server konnte nicht gelöscht werden')
+      throw err
+    } finally {
+      actionLoading.value = null
+    }
+  }
+
   function updateServerStatus(id: number, status: ServerStatus) {
     const server = servers.value.find((s) => s.id === id)
     if (server) server.status = status
@@ -89,6 +104,7 @@ export const useServersStore = defineStore('servers', () => {
     loadServers,
     loadServer,
     performAction,
+    deleteServer,
     updateServerStatus,
   }
 })

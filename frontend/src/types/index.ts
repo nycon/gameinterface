@@ -27,6 +27,7 @@ export type ServerStatus =
   | 'starting'
   | 'online'
   | 'stopping'
+  | 'deleting'
   | 'error'
 
 export interface ServerOwner {
@@ -110,8 +111,10 @@ export interface Node {
   cpu_cores?: number
   memory_mb?: number
   disk_gb?: number
+  phpmyadmin_url?: string | null
   last_heartbeat_at?: string
   servers_count?: number
+  allocations_count?: number
 }
 
 export interface CreateNodeResponse {

@@ -96,10 +96,33 @@ class ServerController extends Controller
 
     public function destroy(Server $server): JsonResponse
     {
+        $server->loadMissing('node');
+
+        // Node aufräumen (Stop + Unit + Dateien) — best effort
+        $uninstallJob = null;
+        try {
+            $uninstallJob = $this->power->dispatch($server, 'uninstall');
+        } catch (\Throwable) {
+            // weiter löschen, auch wenn Node offline / Job fehlschlägt
+        }
+
+        $server->allocations()->update(['server_id' => null]);
+
+        // andere pending Jobs abbrechen — den Uninstall-Job aber laufen lassen
+        $pending = $server->panelJobs()->whereIn('status', ['pending', 'running']);
+        if ($uninstallJob) {
+            $pending->where('id', '!=', $uninstallJob->id);
+        }
+        $pending->update([
+            'status' => 'failed',
+            'error' => 'server deleted',
+            'finished_at' => now(),
+        ]);
+
         $server->delete();
         $this->audit->log('server.deleted', $server);
 
-        return response()->json(null, 204);
+        return response()->json(['ok' => true], 200);
     }
 
     public function power(Request $request, Server $server, string $action): JsonResponse

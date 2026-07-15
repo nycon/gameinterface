@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 class ServerPowerService
 {
-    private const ACTIONS = ['start', 'stop', 'restart', 'kill', 'install', 'update', 'backup', 'restore'];
+    private const ACTIONS = ['start', 'stop', 'restart', 'kill', 'install', 'update', 'backup', 'restore', 'uninstall', 'delete'];
 
     public function __construct(
         private readonly AuditLogger $audit,
@@ -52,6 +52,8 @@ class ServerPowerService
             $server->update(['status' => 'installing']);
         } elseif ($action === 'kill') {
             $server->update(['status' => 'stopping']);
+        } elseif (in_array($action, ['uninstall', 'delete'], true)) {
+            $server->update(['status' => 'deleting']);
         }
 
         $this->audit->log("server.{$action}", $server, ['job_uuid' => $job->uuid]);

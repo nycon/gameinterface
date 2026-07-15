@@ -28,7 +28,7 @@ Wichtig:
 
 - **panel** — Docker, SSL, Admin
 - **image-server** — SFTP + Complete an Panel (mit Deploy-Token)
-- **node** — SteamCMD, lib32, Java, MariaDB, Agent + Claim
+- **node** — SteamCMD, lib32, Java, MariaDB, phpMyAdmin, Agent + Claim
 
 ## Doctor
 

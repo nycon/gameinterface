@@ -146,6 +146,100 @@ SQL
   getent group mysql >/dev/null && usermod -aG mysql "$user" 2>/dev/null || true
 }
 
+gp_node_install_phpmyadmin() {
+  local port="${GAMEPANEL_PHPMYADMIN_PORT:-8081}"
+  local root="/opt/gamepanel/phpmyadmin"
+  local ip
+  ip="$(gp_get_env GAMEPANEL_NODE_IP "")"
+  [[ -n "$ip" ]] || ip="$(gp_detect_primary_ip 2>/dev/null || hostname -I | awk '{print $1}')"
+
+  gp_info "Installiere phpMyAdmin auf Port ${port}…"
+  gp_apt_install nginx php-fpm php-mysql php-mbstring php-xml php-curl unzip curl
+
+  local php_sock
+  php_sock="$(ls /run/php/php*-fpm.sock 2>/dev/null | head -1 || true)"
+  if [[ -z "$php_sock" ]]; then
+    systemctl enable --now php*-fpm 2>/dev/null || systemctl enable --now php8.3-fpm 2>/dev/null || systemctl enable --now php8.2-fpm 2>/dev/null || true
+    php_sock="$(ls /run/php/php*-fpm.sock 2>/dev/null | head -1 || true)"
+  fi
+  [[ -n "$php_sock" ]] || gp_die "php-fpm Socket nicht gefunden"
+
+  if [[ ! -f "${root}/index.php" ]]; then
+    install -d -m 0755 "$root"
+    local tmp="/tmp/phpmyadmin.tar.gz"
+    local url="https://files.phpmyadmin.net/phpMyAdmin/5.2.2/phpMyAdmin-5.2.2-all-languages.tar.gz"
+    if ! curl -fsSL --retry 5 --retry-delay 2 -o "$tmp" "$url"; then
+      gp_die "phpMyAdmin-Download fehlgeschlagen"
+    fi
+    local extract="/tmp/pma-extract"
+    rm -rf "$extract"
+    mkdir -p "$extract"
+    tar -xzf "$tmp" -C "$extract"
+    local inner
+    inner="$(find "$extract" -maxdepth 1 -type d -name 'phpMyAdmin-*' | head -1)"
+    [[ -n "$inner" ]] || gp_die "phpMyAdmin Archive ungültig"
+    cp -a "${inner}/." "$root/"
+    rm -rf "$tmp" "$extract"
+  fi
+
+  local blowfish
+  blowfish="$(gp_random_secret 32)"
+  cat > "${root}/config.inc.php" <<EOF
+<?php
+\$cfg['blowfish_secret'] = '${blowfish}';
+\$i = 0;
+\$i++;
+\$cfg['Servers'][\$i]['auth_type'] = 'cookie';
+\$cfg['Servers'][\$i]['host'] = '127.0.0.1';
+\$cfg['Servers'][\$i]['compress'] = false;
+\$cfg['Servers'][\$i]['AllowNoPassword'] = false;
+\$cfg['UploadDir'] = '';
+\$cfg['SaveDir'] = '';
+\$cfg['TempDir'] = '/tmp';
+\$cfg['DefaultLang'] = 'de';
+EOF
+  chown -R www-data:www-data "$root" 2>/dev/null || chown -R nginx:nginx "$root" 2>/dev/null || true
+  chmod 0640 "${root}/config.inc.php"
+
+  cat > /etc/nginx/sites-available/gamepanel-phpmyadmin <<EOF
+server {
+    listen ${port} default_server;
+    listen [::]:${port} default_server;
+    server_name _;
+    root ${root};
+    index index.php;
+    client_max_body_size 64m;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    location ~ \.php\$ {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_pass unix:${php_sock};
+    }
+
+    location ~ /\. {
+        deny all;
+    }
+}
+EOF
+
+  ln -sfn /etc/nginx/sites-available/gamepanel-phpmyadmin /etc/nginx/sites-enabled/gamepanel-phpmyadmin
+  rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+  nginx -t
+  systemctl enable --now nginx
+  systemctl reload nginx || systemctl restart nginx
+
+  local url="http://${ip}:${port}/"
+  gp_merge_env_key GAMEPANEL_PHPMYADMIN_URL "$url"
+  gp_merge_env_key GAMEPANEL_PHPMYADMIN_PORT "$port"
+  gp_ok "phpMyAdmin: ${url}"
+  gp_msg "  Kunden: Login mit DB-User/Passwort (sehen nur ihre DB)"
+  gp_msg "  Admin:  Login mit gamepanel-agent + Passwort aus /etc/gamepanel/node.env"
+}
+
 gp_node_install_steamcmd() {
   local steam_dir="/opt/gamepanel/steamcmd"
   local user="${GAMEPANEL_NODE_USER:-gamepanel-node}"
@@ -450,8 +544,11 @@ gp_node_claim_deploy() {
     --arg hostname "$hostname" \
     --arg ip "$ip" \
     --arg agent_version "$agent_ver" \
+    --arg phpmyadmin_url "$(gp_get_env GAMEPANEL_PHPMYADMIN_URL "")" \
+    --arg mysql_username "$(gp_get_env GAMEPANEL_NODE_MYSQL_USER gamepanel-agent)" \
+    --arg mysql_password "$(gp_get_env GAMEPANEL_NODE_MYSQL_PASSWORD "")" \
     --argjson tls_insecure "$tls_insecure" \
-    '{deploy_token:$deploy_token, hostname:$hostname, ip_address:$ip, agent_version:$agent_version, tls_insecure:$tls_insecure}')
+    '{deploy_token:$deploy_token, hostname:$hostname, ip_address:$ip, agent_version:$agent_version, tls_insecure:$tls_insecure, phpmyadmin_url:$phpmyadmin_url, mysql_username:$mysql_username, mysql_password:$mysql_password}')
 
   gp_info "Claim Node: ${panel_url%/}/api/install/node/claim"
   if ! resp=$(curl -fsS "${tls_flags[@]}" -X POST "${panel_url%/}/api/install/node/claim" \
@@ -552,6 +649,7 @@ gp_install_node() {
   gp_run_step node_user "Node-Benutzer & Verzeichnisse" gp_node_create_user
   gp_run_step node_deps "Runtimes (lib32, Java, MariaDB, Tools)" gp_node_install_deps
   gp_run_step node_mariadb "MariaDB härten + Agent-User" gp_node_configure_mariadb
+  gp_run_step node_pma "phpMyAdmin (Kunden-DBs)" gp_node_install_phpmyadmin
   gp_run_step node_steam "SteamCMD" gp_node_install_steamcmd
   gp_run_step node_verify "Runtime-Verifikation" gp_node_verify_runtimes
   gp_run_step node_agent "GamePanel Agent" gp_node_install_agent
@@ -569,10 +667,11 @@ gp_install_node() {
   gp_fw_setup_node
   gp_log_info "Game-Node fertig. Prüfen: systemctl status gamepanel-agent"
   gp_msg ""
-  gp_msg "  Java:     $(command -v java) ($(java -version 2>&1 | head -1))"
-  gp_msg "  SteamCMD: /opt/gamepanel/steamcmd/steamcmd.sh"
-  gp_msg "  MariaDB:  127.0.0.1 (User gamepanel-agent)"
-  gp_msg "  Agent:    systemctl status gamepanel-agent"
+  gp_msg "  Java:       $(command -v java) ($(java -version 2>&1 | head -1))"
+  gp_msg "  SteamCMD:   /opt/gamepanel/steamcmd/steamcmd.sh"
+  gp_msg "  MariaDB:    127.0.0.1 (User gamepanel-agent)"
+  gp_msg "  phpMyAdmin: $(gp_get_env GAMEPANEL_PHPMYADMIN_URL http://NODE:8081/)"
+  gp_msg "  Agent:      systemctl status gamepanel-agent"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

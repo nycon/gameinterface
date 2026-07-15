@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Admin\AllocationController;
 use App\Http\Controllers\Api\Admin\AuditLogController;
 use App\Http\Controllers\Api\Admin\DashboardController;
+use App\Http\Controllers\Api\Admin\DatabaseController as AdminDatabaseController;
 use App\Http\Controllers\Api\Admin\GameTemplateController;
 use App\Http\Controllers\Api\Admin\ImageController;
 use App\Http\Controllers\Api\Admin\ImageServerController;
@@ -68,10 +69,14 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
 
     Route::apiResource('servers', AdminServerController::class);
     Route::post('/servers/{server}/{action}', [AdminServerController::class, 'power'])
-        ->whereIn('action', ['start', 'stop', 'restart', 'kill', 'install', 'update', 'backup']);
+        ->whereIn('action', ['start', 'stop', 'restart', 'kill', 'install', 'update', 'backup', 'uninstall', 'delete']);
 
     Route::apiResource('users', UserController::class);
     Route::apiResource('allocations', AllocationController::class)->only(['index', 'store', 'destroy']);
+
+    Route::get('/databases', [AdminDatabaseController::class, 'index']);
+    Route::get('/databases/node-access', [AdminDatabaseController::class, 'nodeAccess']);
+    Route::get('/databases/{database}/reveal', [AdminDatabaseController::class, 'reveal']);
 
     Route::get('/jobs', [JobController::class, 'index']);
     Route::get('/jobs/{job}', [JobController::class, 'show']);
@@ -112,6 +117,7 @@ Route::prefix('client')->middleware(['auth:sanctum'])->group(function () {
 
     Route::get('/servers/{server}/databases', [DatabaseController::class, 'index']);
     Route::post('/servers/{server}/databases', [DatabaseController::class, 'store']);
+    Route::get('/servers/{server}/databases/{database}/reveal', [DatabaseController::class, 'reveal']);
     Route::delete('/servers/{server}/databases/{database}', [DatabaseController::class, 'destroy']);
 
     Route::get('/servers/{server}/ftp-accounts', [FtpAccountController::class, 'index']);

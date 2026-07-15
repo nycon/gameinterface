@@ -113,3 +113,38 @@ export async function testImageServer(id: number): Promise<{ ok: boolean; messag
   )
   return data
 }
+
+export async function fetchAdminDatabases(page = 1) {
+  const { data } = await apiClient.get('/admin/databases', { params: { page } })
+  return data as PaginatedResponse<{
+    id: number
+    name: string
+    username: string
+    host: string
+    port: number
+    engine: string
+    server?: {
+      id: number
+      name: string
+      owner?: { id: number; name: string; email?: string }
+      node?: { id: number; name: string; ip_address?: string; phpmyadmin_url?: string }
+    }
+  }>
+}
+
+export async function revealAdminDatabase(id: number) {
+  const { data } = await apiClient.get<{
+    password: string
+    phpmyadmin_url?: string | null
+  }>(`/admin/databases/${id}/reveal`)
+  return data
+}
+
+export async function fetchNodeDbAccess(nodeId: number) {
+  const { data } = await apiClient.get<{
+    phpmyadmin_url: string | null
+    username: string
+    password: string | null
+  }>('/admin/databases/node-access', { params: { node_id: nodeId } })
+  return data
+}

@@ -31,16 +31,28 @@ func NewManager(opts Options) *Manager {
 
 func (m *Manager) Create(ctx context.Context, name, username, password string) error {
 	sql := fmt.Sprintf(
-		"CREATE DATABASE IF NOT EXISTS `%s`; CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'; FLUSH PRIVILEGES;",
-		escapeIdent(name), escapeIdent(username), escapeString(password), escapeIdent(name), escapeIdent(username),
+		"CREATE DATABASE IF NOT EXISTS `%s`;"+
+			" CREATE USER IF NOT EXISTS '%s'@'localhost' IDENTIFIED BY '%s';"+
+			" CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s';"+
+			" GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'localhost';"+
+			" GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';"+
+			" FLUSH PRIVILEGES;",
+		escapeIdent(name),
+		escapeIdent(username), escapeString(password),
+		escapeIdent(username), escapeString(password),
+		escapeIdent(name), escapeIdent(username),
+		escapeIdent(name), escapeIdent(username),
 	)
 	return m.exec(ctx, sql)
 }
 
 func (m *Manager) Delete(ctx context.Context, name, username string) error {
 	sql := fmt.Sprintf(
-		"DROP DATABASE IF EXISTS `%s`; DROP USER IF EXISTS '%s'@'%%'; FLUSH PRIVILEGES;",
-		escapeIdent(name), escapeIdent(username),
+		"DROP DATABASE IF EXISTS `%s`;"+
+			" DROP USER IF EXISTS '%s'@'localhost';"+
+			" DROP USER IF EXISTS '%s'@'%%';"+
+			" FLUSH PRIVILEGES;",
+		escapeIdent(name), escapeIdent(username), escapeIdent(username),
 	)
 	return m.exec(ctx, sql)
 }

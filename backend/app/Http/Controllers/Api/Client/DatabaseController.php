@@ -20,7 +20,29 @@ class DatabaseController extends Controller
     {
         Gate::authorize('view', $server);
 
-        return response()->json($server->databases);
+        $server->loadMissing('node:id,ip_address,phpmyadmin_url');
+        $phpmyadmin = $server->node?->phpmyadmin_url
+            ?: ($server->node?->ip_address ? 'http://'.$server->node->ip_address.':8081/' : null);
+
+        return response()->json([
+            'data' => $server->databases,
+            'phpmyadmin_url' => $phpmyadmin,
+        ]);
+    }
+
+    public function reveal(Server $server, ServerDatabase $database): JsonResponse
+    {
+        Gate::authorize('update', $server);
+        abort_unless($database->server_id === $server->id, 404);
+
+        $server->loadMissing('node:id,ip_address,phpmyadmin_url');
+
+        return response()->json([
+            'database' => $database,
+            'password' => $this->encryption->decrypt($database->password_encrypted),
+            'phpmyadmin_url' => $server->node?->phpmyadmin_url
+                ?: ($server->node?->ip_address ? 'http://'.$server->node->ip_address.':8081/' : null),
+        ]);
     }
 
     public function store(Request $request, Server $server): JsonResponse

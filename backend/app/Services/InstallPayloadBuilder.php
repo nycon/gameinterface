@@ -64,9 +64,89 @@ class InstallPayloadBuilder
 
         if ($allocation) {
             $allocation->update(['server_id' => $server->id]);
+
+            return $allocation;
         }
 
-        return $allocation;
+        return $this->createNextAllocation($server);
+    }
+
+    public function createNextAllocation(Server $server): ?Allocation
+    {
+        $server->loadMissing(['template', 'node']);
+        if (! $server->node) {
+            return null;
+        }
+
+        [$defaultPort, $protocol] = $this->defaultPortFromTemplate($server);
+        $used = Allocation::query()
+            ->where('node_id', $server->node_id)
+            ->pluck('port')
+            ->all();
+        $usedLookup = array_fill_keys($used, true);
+
+        $port = $defaultPort;
+        while (isset($usedLookup[$port]) && $port < 65535) {
+            $port++;
+        }
+
+        return Allocation::query()->create([
+            'node_id' => $server->node_id,
+            'server_id' => $server->id,
+            'ip' => $server->node->ip_address,
+            'port' => $port,
+            'protocol' => $protocol,
+            'notes' => 'auto',
+        ]);
+    }
+
+    /**
+     * Legt einen Start-Pool an Ports an (Minecraft u.a.), damit Install ohne manuellen Port klappt.
+     */
+    public function seedNodeAllocations(\App\Models\Node $node, int $count = 50, int $startPort = 25565): void
+    {
+        $existing = Allocation::query()->where('node_id', $node->id)->pluck('port')->all();
+        $lookup = array_fill_keys($existing, true);
+        $port = $startPort;
+        $created = 0;
+
+        while ($created < $count && $port <= 65535) {
+            if (! isset($lookup[$port])) {
+                Allocation::query()->create([
+                    'node_id' => $node->id,
+                    'server_id' => null,
+                    'ip' => $node->ip_address,
+                    'port' => $port,
+                    'protocol' => 'tcp',
+                    'notes' => 'pool',
+                ]);
+                $created++;
+            }
+            $port++;
+        }
+    }
+
+    /** @return array{0:int,1:string} */
+    private function defaultPortFromTemplate(Server $server): array
+    {
+        $defaultPort = 25565;
+        $protocol = 'tcp';
+        $yaml = (string) ($server->template?->yaml_definition ?? '');
+        if ($yaml === '') {
+            return [$defaultPort, $protocol];
+        }
+        try {
+            $def = Yaml::parse($yaml);
+            $ports = data_get($def, 'ports', []);
+            if (is_array($ports) && isset($ports[0]) && is_array($ports[0])) {
+                $defaultPort = (int) ($ports[0]['default'] ?? $defaultPort);
+                $protocol = (string) ($ports[0]['protocol'] ?? 'tcp');
+            }
+        } catch (\Throwable) {
+            // keep defaults
+        }
+
+        return [max(1, min(65535, $defaultPort)), in_array($protocol, ['tcp', 'udp'], true) ? $protocol : 'tcp'];
     }
 
     private function applyTemplateYaml(array &$payload, string $yaml): void
@@ -91,23 +171,34 @@ class InstallPayloadBuilder
 
         $payload['install_strategy'] = data_get($def, 'image.strategy', data_get($def, 'type', ''));
         $payload['work_dir'] = data_get($def, 'runtime.work_dir', '/server');
-        $payload['minecraft_version'] = data_get($def, 'variables', []);
-        if (is_array($payload['minecraft_version'])) {
-            $ver = 'latest';
-            foreach ($payload['minecraft_version'] as $variable) {
-                if (($variable['env'] ?? '') === 'MINECRAFT_VERSION') {
-                    $ver = (string) ($variable['default'] ?? 'latest');
-                    break;
+
+        $vars = data_get($def, 'variables', []);
+        $ver = 'latest';
+        $motd = 'GamePanel Minecraft Server';
+        $maxPlayers = '20';
+        $onlineMode = 'true';
+        if (is_array($vars)) {
+            foreach ($vars as $variable) {
+                if (! is_array($variable)) {
+                    continue;
                 }
-                if (($variable['env'] ?? '') === 'MEMORY_MIN') {
-                    $payload['memory_min'] = (string) ($variable['default'] ?? $payload['memory_min']);
-                }
-                if (($variable['env'] ?? '') === 'MEMORY_MAX' && empty($payload['memory_max'])) {
-                    $payload['memory_max'] = (string) ($variable['default'] ?? '2048M');
-                }
+                $env = (string) ($variable['env'] ?? '');
+                $default = (string) ($variable['default'] ?? '');
+                match ($env) {
+                    'MINECRAFT_VERSION' => $ver = $default !== '' ? $default : $ver,
+                    'MEMORY_MIN' => $payload['memory_min'] = $default !== '' ? $default : ($payload['memory_min'] ?? '1024M'),
+                    'MEMORY_MAX' => $payload['memory_max'] = $payload['memory_max'] ?: ($default !== '' ? $default : '2048M'),
+                    'MOTD' => $motd = $default !== '' ? $default : $motd,
+                    'MAX_PLAYERS' => $maxPlayers = $default !== '' ? $default : $maxPlayers,
+                    'ONLINE_MODE' => $onlineMode = $default !== '' ? $default : $onlineMode,
+                    default => null,
+                };
             }
-            $payload['minecraft_version'] = $ver;
         }
+        $payload['minecraft_version'] = $ver;
+        $payload['motd'] = $motd;
+        $payload['max_players'] = $maxPlayers;
+        $payload['online_mode'] = $onlineMode;
 
         if (empty($payload['startup_command'])) {
             $executable = data_get($def, 'runtime.executable');

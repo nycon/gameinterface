@@ -159,6 +159,9 @@ func (h *Handler) Handle(ctx context.Context, job api.Job) error {
 	case "kill":
 		err = h.handleKill(jobCtx, sid)
 		serverStatus = "offline"
+	case "uninstall", "delete":
+		err = h.handleUninstall(jobCtx, job, sid)
+		serverStatus = "deleted"
 	case "files.list":
 		result, err = h.handleFilesList(jobCtx, job, sid)
 	case "files.read":
@@ -210,6 +213,9 @@ type installPayload struct {
 	InstallStrategy string `json:"install_strategy"`
 	MinecraftVer    string `json:"minecraft_version"`
 	WorkDir         string `json:"work_dir"`
+	Motd            string `json:"motd"`
+	MaxPlayers      string `json:"max_players"`
+	OnlineMode      string `json:"online_mode"`
 }
 
 func (h *Handler) handleInstall(ctx context.Context, job api.Job, serverID string) error {
@@ -295,6 +301,14 @@ func (h *Handler) handleInstall(ctx context.Context, job api.Job, serverID strin
 			JarName:   "server.jar",
 		}); err != nil {
 			return fmt.Errorf("minecraft install: %w", err)
+		}
+		if err := minecraft.WriteServerProperties(serverDir, minecraft.Properties{
+			Motd:       payload.Motd,
+			MaxPlayers: payload.MaxPlayers,
+			OnlineMode: payload.OnlineMode,
+			ServerPort: payload.Port,
+		}); err != nil {
+			h.log.Warn("server.properties schreiben fehlgeschlagen", "error", err)
 		}
 	}
 
@@ -397,10 +411,41 @@ func (h *Handler) handleKill(_ context.Context, serverID string) error {
 	return h.systemd.Kill(serverID)
 }
 
+func (h *Handler) handleUninstall(_ context.Context, job api.Job, serverID string) error {
+	var payload struct {
+		LinuxUser   string `json:"linux_user"`
+		InstallPath string `json:"install_path"`
+	}
+	_ = json.Unmarshal(job.Payload, &payload)
+
+	_ = h.systemd.Remove(serverID)
+
+	dir := payload.InstallPath
+	if dir == "" {
+		dir = installRoot(job, h.cfg, serverID)
+	}
+	if dir != "" && dir != "/" {
+		_ = os.RemoveAll(dir)
+	}
+
+	keyForUser := serverID
+	if id := numericServerID(job); id > 0 {
+		keyForUser = strconv.FormatUint(id, 10)
+	}
+	user := users.SanitizeUsername(payload.LinuxUser, keyForUser)
+	_ = exec.Command("userdel", user).Run()
+
+	return nil
+}
+
 type updatePayload struct {
-	ManifestRemote string `json:"manifest_remote"`
-	ArchiveRemote  string `json:"archive_remote"`
-	SteamAppID     string `json:"steam_app_id"`
+	ManifestRemote  string `json:"manifest_remote"`
+	ArchiveRemote   string `json:"archive_remote"`
+	SteamAppID      string `json:"steam_app_id"`
+	TemplateSlug    string `json:"template_slug"`
+	InstallStrategy string `json:"install_strategy"`
+	MinecraftVer    string `json:"minecraft_version"`
+	StartupCommand  string `json:"startup_command"`
 }
 
 func (h *Handler) handleUpdate(ctx context.Context, job api.Job, serverID string) error {
@@ -443,6 +488,17 @@ func (h *Handler) handleUpdate(ctx context.Context, job api.Job, serverID string
 			Manifest:   manifest,
 		}); err != nil {
 			return err
+		}
+	} else if payload.SteamAppID == "" && (
+		payload.InstallStrategy == "script" ||
+			minecraft.LooksLikeMinecraft(payload.StartupCommand, payload.TemplateSlug) ||
+			strings.EqualFold(payload.TemplateSlug, "minecraft")) {
+		if err := minecraft.Install(ctx, minecraft.InstallRequest{
+			ServerDir: serverDir,
+			Version:   payload.MinecraftVer,
+			JarName:   "server.jar",
+		}); err != nil {
+			return fmt.Errorf("minecraft update: %w", err)
 		}
 	}
 

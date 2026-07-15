@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Node;
 use App\Services\AuditLogger;
 use App\Services\DeployTokenService;
+use App\Services\InstallPayloadBuilder;
 use App\Services\NodeAuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +17,7 @@ class NodeController extends Controller
         private readonly NodeAuthService $nodeAuth,
         private readonly DeployTokenService $deployTokens,
         private readonly AuditLogger $audit,
+        private readonly InstallPayloadBuilder $installPayload,
     ) {}
 
     public function index(): JsonResponse
@@ -36,7 +38,14 @@ class NodeController extends Controller
             'disk_gb' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $node = Node::query()->create($data + ['status' => 'offline']);
+        $node = Node::query()->create($data + [
+            'status' => 'offline',
+            'phpmyadmin_url' => 'http://'.$data['ip_address'].':8081/',
+        ]);
+
+        // Port-Pool vorbereiten (Minecraft 25565+), damit Server-Install ohne manuellen Port läuft
+        $this->installPayload->seedNodeAllocations($node);
+
         $deploy = $this->deployTokens->createFor(
             $node,
             DeployTokenService::PURPOSE_NODE,
@@ -46,7 +55,7 @@ class NodeController extends Controller
         $this->audit->log('node.created', $node);
 
         return response()->json([
-            'node' => $node,
+            'node' => $node->fresh()->loadCount('servers')->loadCount('allocations'),
             'deploy_token' => $deploy['token'],
             'install_command' => $deploy['install_command'],
             // Legacy field kept for older clients

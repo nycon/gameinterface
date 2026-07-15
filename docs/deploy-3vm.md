@@ -64,7 +64,9 @@ gp-image build cs2 --version 1.0.0
 curl -fsSL https://panel.example.com/install/node/gpd_….sh | sudo bash
 ```
 
-Installiert automatisch: SteamCMD, lib32, Java, MariaDB, Agent — und claimt den Node am Panel (inkl. Image-Server-Credentials).
+Installiert automatisch: SteamCMD, lib32, Java, MariaDB, **phpMyAdmin**, Agent — und claimt den Node am Panel (inkl. Image-Server-Credentials und MySQL-Admin-Zugang fürs Panel).
+
+Beim Anlegen des Nodes wird **automatisch ein Port-Pool** (25565+) angelegt — kein manuelles Port-Setup nötig.
 
 `--tls-insecure` ist im Auto-Script enthalten (Self-Signed). Bei gültigem Let’s-Encrypt kannst du lokal ohne Flag installieren:
 
@@ -76,6 +78,26 @@ sudo ./install.sh --role node --non-interactive \
 
 ---
 
+## 4) Ersten Gameserver: Minecraft
+
+1. Admin → **Server** → **Server erstellen**
+2. Template ist standardmäßig **Minecraft Java Edition**
+3. **Anlegen & installieren** — der Agent lädt automatisch `server.jar` (Mojang), schreibt EULA + `server.properties`, legt die systemd-Unit an und öffnet den Port
+
+Kein manuelles Java-/JAR-Setup. Optional danach **Start**.
+
+---
+
+## Datenbanken / phpMyAdmin
+
+- Pro Node: MariaDB nur auf `127.0.0.1`, phpMyAdmin auf **Port 8081**
+- Client: Server → **Datenbanken** → Anlegen → **phpMyAdmin** (Login mit DB-User; sieht nur diese DB)
+- Admin: **Datenbanken** → Node-Button für Full-Access (`gamepanel-agent`) oder Passwort+PMA pro DB
+
+Firewall: Port **8081/tcp** zum Node freigeben (macht der Node-Installer lokal).
+
+---
+
 ## Live-Check
 
 ```bash
@@ -84,10 +106,11 @@ curl -k https://PANEL/api/health
 
 # Node
 systemctl status gamepanel-agent
+curl -I http://NODE-IP:8081/
 sudo ./install.sh --doctor
 ```
 
-Im UI: Node **online** → Server anlegen → installieren → starten.
+Im UI: Node **online** → Minecraft-Server anlegen → installieren → starten.
 
 ---
 
@@ -98,7 +121,8 @@ Im UI: Node **online** → Server anlegen → installieren → starten.
 | Internet | VM1 | 80/443 |
 | VM3 | VM1 | 443 |
 | VM3 | VM2 | 22 |
-| Spieler | VM3 | Game-Ports |
+| Spieler | VM3 | Game-Ports (z.B. 25565) |
+| Admin/Kunde | VM3 | 8081 (phpMyAdmin) |
 
 ---
 

@@ -13,7 +13,13 @@ class Node extends Model
 
     protected $fillable = [
         'uuid', 'name', 'hostname', 'ip_address', 'agent_version', 'status',
-        'cpu_cores', 'memory_mb', 'disk_gb', 'last_heartbeat_at', 'meta',
+        'cpu_cores', 'memory_mb', 'disk_gb', 'phpmyadmin_url',
+        'mysql_admin_user', 'mysql_admin_password_encrypted',
+        'last_heartbeat_at', 'meta',
+    ];
+
+    protected $hidden = [
+        'mysql_admin_password_encrypted',
     ];
 
     protected function casts(): array

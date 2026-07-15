@@ -13,6 +13,7 @@ const config = computed(() => {
     installing: { color: 'bg-panel-warning animate-pulse', label: 'Installation' },
     starting: { color: 'bg-panel-warning animate-pulse', label: 'Startet' },
     stopping: { color: 'bg-panel-warning animate-pulse', label: 'Stoppt' },
+    deleting: { color: 'bg-panel-danger animate-pulse', label: 'Löschen' },
     running: { color: 'bg-panel-success', label: 'Läuft' },
     stopped: { color: 'bg-panel-muted', label: 'Gestoppt' },
     maintenance: { color: 'bg-panel-warning', label: 'Wartung' },

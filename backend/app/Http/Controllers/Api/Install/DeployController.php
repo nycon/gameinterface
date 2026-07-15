@@ -123,6 +123,9 @@ BASH;
             'agent_version' => ['nullable', 'string', 'max:64'],
             'fqdn' => ['nullable', 'string', 'max:255'],
             'tls_insecure' => ['nullable', 'boolean'],
+            'phpmyadmin_url' => ['nullable', 'string', 'max:255'],
+            'mysql_username' => ['nullable', 'string', 'max:64'],
+            'mysql_password' => ['nullable', 'string', 'max:255'],
         ]);
 
         $deploy = $this->requireToken($data['deploy_token'], DeployTokenService::PURPOSE_NODE);
@@ -136,8 +139,14 @@ BASH;
             'hostname' => $data['hostname'] ?? null,
             'ip_address' => $data['ip_address'] ?? null,
             'agent_version' => $data['agent_version'] ?? null,
+            'phpmyadmin_url' => $data['phpmyadmin_url'] ?? null,
+            'mysql_admin_user' => $data['mysql_username'] ?? null,
             'status' => 'offline',
         ], fn ($v) => $v !== null && $v !== '');
+
+        if (! empty($data['mysql_password'])) {
+            $updates['mysql_admin_password_encrypted'] = $this->encryption->encrypt($data['mysql_password']);
+        }
 
         if ($updates !== []) {
             $node->update($updates);

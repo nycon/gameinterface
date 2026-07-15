@@ -14,6 +14,13 @@ const store = useServersStore()
 async function run(action: PowerAction) {
   await store.performAction(props.server.id, action, props.admin ?? false)
 }
+
+async function remove() {
+  if (!confirm(`Server „${props.server.name}“ wirklich löschen? Dateien auf dem Node werden entfernt.`)) {
+    return
+  }
+  await store.deleteServer(props.server.id)
+}
 </script>
 
 <template>
@@ -63,6 +70,14 @@ async function run(action: PowerAction) {
       @click="run('update')"
     >
       Update
+    </button>
+    <button
+      v-if="admin"
+      class="panel-btn-secondary text-xs px-2 py-1 text-panel-danger"
+      :disabled="store.actionLoading === server.id"
+      @click="remove"
+    >
+      Löschen
     </button>
   </div>
 </template>

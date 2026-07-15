@@ -10,6 +10,8 @@ const navItems = [
   { to: '/admin', label: 'Dashboard', icon: '▣', exact: true },
   { to: '/admin/nodes', label: 'Nodes', icon: '⬡' },
   { to: '/admin/servers', label: 'Server', icon: '▤' },
+  { to: '/admin/allocations', label: 'Ports', icon: '◎' },
+  { to: '/admin/databases', label: 'Datenbanken', icon: '◇' },
   { to: '/admin/image-servers', label: 'Image Server', icon: '◫' },
   { to: '/admin/images', label: 'Images', icon: '◧' },
   { to: '/admin/templates', label: 'Templates', icon: '▦' },
