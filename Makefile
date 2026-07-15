@@ -65,6 +65,11 @@ agent-build:
 image-build:
 	$(MAKE) -C image-builder build
 
+# Image-Builder auf Linux-Host (Image-Server) inkl. Go/SteamCMD
+image-builder-install:
+	sudo bash installer/install-image-builder.sh
+
+
 doctor:
 	@echo "=== GamePanel Doctor ==="
 	@command -v docker >/dev/null 2>&1 && echo "[OK] docker" || echo "[FEHLER] docker nicht gefunden"

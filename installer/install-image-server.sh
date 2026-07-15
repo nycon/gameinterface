@@ -82,10 +82,12 @@ gp_install_image_server() {
   touch /var/log/gamepanel/image-server.log
   chmod 0640 /var/log/gamepanel/image-server.log
   gp_run_step img_panel "Panel Complete (Deploy-Token)" gp_image_server_complete_panel
+  gp_run_step img_builder "Image-Builder + SteamCMD + Go" _gp_img_builder_install
   gp_image_server_print_credentials
   gp_write_image_join_file
   gp_log_info "Image-Server bereit unter ${IMAGE_ROOT}"
   gp_msg ""
+  gp_msg "  Images bauen:  gp-image build cs2 --version 1.0.0"
   if [[ -n "$(gp_get_env GAMEPANEL_DEPLOY_TOKEN "")" ]]; then
     gp_msg "  Image-Server ist im Panel hinterlegt — als Nächstes Node im Panel anlegen."
   else
@@ -95,6 +97,10 @@ gp_install_image_server() {
 
 _gp_img_layout() {
   gp_image_ensure_layout "${IMAGE_SERVER_ROOT:-/srv/gamepanel-images}"
+}
+
+_gp_img_builder_install() {
+  bash "${INSTALLER_DIR}/install-image-builder.sh"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

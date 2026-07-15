@@ -186,5 +186,6 @@ gp_image_server_print_credentials() {
   gp_msg "  Manifest:          ${root}/index.json"
   gp_msg "  Node Private Key:  /etc/gamepanel/keys/node-access"
   gp_msg "  (wird bei Deploy-Token automatisch ans Panel gemeldet — kein scp nötig)"
+  gp_msg "  Image-Builder:     gp-image build <template> --version X"
   gp_msg ""
 }

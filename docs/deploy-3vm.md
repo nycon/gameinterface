@@ -41,6 +41,17 @@ curl -fsSL https://panel.example.com/install/image-server/gpd_….sh | sudo bash
 ```
 
 Der Installer setzt SFTP auf und meldet den Private Key automatisch ans Panel. Kein `scp`.
+Zusätzlich: **Go, SteamCMD und `gp-image`** (Image-Builder) werden mitinstalliert.
+
+Falls der Image-Server schon läuft **ohne** Builder:
+
+```bash
+cd /opt/gamepanel-src
+sudo git pull
+sudo bash installer/install-image-builder.sh
+gp-image list
+gp-image build cs2 --version 1.0.0
+```
 
 ---
 
