@@ -144,7 +144,7 @@ func Default() *Config {
 		},
 		Agent: AgentConfig{
 			HeartbeatInterval: 30 * time.Second,
-			JobPollInterval:   10 * time.Second,
+			JobPollInterval:   1 * time.Second,
 			DataDir:           "/opt/gamepanel/agent/data",
 		},
 		Systemd: SystemdConfig{
@@ -206,7 +206,7 @@ func (c *Config) Validate() error {
 		c.Agent.HeartbeatInterval = 30 * time.Second
 	}
 	if c.Agent.JobPollInterval <= 0 {
-		c.Agent.JobPollInterval = 10 * time.Second
+		c.Agent.JobPollInterval = 1 * time.Second
 	}
 	return nil
 }

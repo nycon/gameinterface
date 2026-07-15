@@ -94,11 +94,19 @@ class AgentController extends Controller
         /** @var Node $node */
         $node = $request->attributes->get('node');
 
-        $jobs = PanelJob::query()
+		$jobs = PanelJob::query()
             ->where('node_id', $node->id)
             ->where('status', 'pending')
+            ->orderByRaw("CASE
+                WHEN type LIKE '%.files.%' THEN 0
+                WHEN type LIKE '%.console.%' THEN 0
+                WHEN type LIKE '%.ftp.%' THEN 1
+                WHEN type LIKE '%.database.%' THEN 1
+                WHEN type = 'server.diagnostics' THEN 1
+                ELSE 2
+            END")
             ->orderBy('id')
-            ->limit(10)
+            ->limit(20)
             ->get();
 
         foreach ($jobs as $job) {

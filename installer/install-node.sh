@@ -595,7 +595,7 @@ paths:
 
 agent:
   heartbeat_interval: 30s
-  job_poll_interval: 5s
+  job_poll_interval: 1s
   data_dir: "/opt/gamepanel/agent/data"
 
 systemd:

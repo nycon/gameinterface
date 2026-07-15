@@ -35,7 +35,7 @@ async function loadFiles(path: string) {
   files.value = []
   try {
     const response = await fetchServerFiles(serverId.value, path)
-    const job = await pollJob(response.job.uuid)
+    const job = await pollJob(response.job.uuid, { intervalMs: 300, timeoutMs: 60_000 })
     if (job.status === 'failed') {
       throw new Error(job.error || 'Dateiliste fehlgeschlagen')
     }
@@ -55,7 +55,7 @@ async function onSelect(node: FileNode) {
   error.value = null
   try {
     const response = await fetchFileContent(serverId.value, node.path)
-    const job = await pollJob(response.job.uuid)
+    const job = await pollJob(response.job.uuid, { intervalMs: 300, timeoutMs: 60_000 })
     if (job.status === 'failed') throw new Error(job.error || 'Lesen fehlgeschlagen')
     editorPath.value = node.path
     editorContent.value = String(job.result?.content ?? '')
@@ -72,7 +72,7 @@ async function saveFile() {
   error.value = null
   try {
     const response = await writeServerFile(serverId.value, editorPath.value, editorContent.value)
-    const job = await pollJob(response.job.uuid)
+    const job = await pollJob(response.job.uuid, { intervalMs: 300, timeoutMs: 60_000 })
     if (job.status === 'failed') throw new Error(job.error || 'Schreiben fehlgeschlagen')
   } catch (err) {
     error.value = getErrorMessage(err, 'Speichern fehlgeschlagen')

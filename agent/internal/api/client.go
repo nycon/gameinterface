@@ -265,29 +265,6 @@ func (c *Client) RunHeartbeatLoop(ctx context.Context, interval time.Duration, c
 	}
 }
 
-func (c *Client) RunJobPollLoop(ctx context.Context, interval time.Duration, handler func(context.Context, Job) error) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			jobs, err := c.PollJobs(ctx)
-			if err != nil {
-				continue
-			}
-			for _, job := range jobs {
-				if err := handler(ctx, job); err != nil {
-					_ = c.FailJob(ctx, job.UUID, err.Error())
-					continue
-				}
-			}
-		}
-	}
-}
-
 func intPtr(v int) *int { return &v }
 
 func runtimeNumCPU() int { return runtime.NumCPU() }
