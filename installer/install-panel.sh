@@ -363,11 +363,13 @@ gp_install_panel() {
   if [[ "$(gp_ssl_mode)" == "letsencrypt" || "$(gp_ssl_mode)" == "acme" || "$(gp_ssl_mode)" == "le" ]]; then
     if gp_ssl_is_letsencrypt_file "$cert"; then
       gp_ok "Let's Encrypt korrekt eingebunden"
+    elif [[ -f "${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs/.ssl_mode" ]] \
+      && grep -q 'ratelimit\|selfsigned' "${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs/.ssl_mode"; then
+      gp_warn "Temporäres Self-Signed wegen Let's Encrypt Rate-Limit — ab Retry-Zeit erneut installieren"
     else
       gp_err "Kein Let's Encrypt Cert in ${cert} (noch Self-Signed oder fehlgeschlagen)"
       gp_msg "Prüfen: DNS A → Server-IP, Port 80 öffentlich, dann Install erneut."
-      gp_msg "  dig +short $(gp_ssl_domain)"
-      gp_msg "  curl -fsS http://$(gp_ssl_domain)/.well-known/acme-challenge/test || true"
+      gp_msg "  Archive: ls /etc/letsencrypt/archive/$(gp_ssl_domain)/"
       gp_die "SSL_MODE=letsencrypt aber Zertifikat ist kein Let's Encrypt."
     fi
   fi

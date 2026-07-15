@@ -54,6 +54,66 @@ gp_ssl_has_live() {
   [[ -f "${live}/fullchain.pem" && -f "${live}/privkey.pem" ]]
 }
 
+# Neueste Datei aus archive/<domain>/ (auch wenn live/ gelöscht wurde)
+gp_ssl_archive_latest() {
+  local domain="$1" kind="$2" # fullchain|privkey|cert|chain
+  local arch="/etc/letsencrypt/archive/${domain}"
+  [[ -d "$arch" ]] || return 1
+  ls -1 "${arch}/${kind}"*.pem 2>/dev/null | sort -V | tail -1
+}
+
+# Stellt live/ aus archive/ wieder her und kopiert nach deploy — OHNE certbot
+gp_ssl_recover_from_archive() {
+  local dir="$1"
+  local domain="$2"
+  local arch="/etc/letsencrypt/archive/${domain}"
+  local fullchain privkey live
+
+  fullchain="$(gp_ssl_archive_latest "$domain" fullchain || true)"
+  privkey="$(gp_ssl_archive_latest "$domain" privkey || true)"
+  if [[ -z "${fullchain:-}" || -z "${privkey:-}" || ! -f "$fullchain" || ! -f "$privkey" ]]; then
+    return 1
+  fi
+
+  live="$(gp_ssl_live_dir "$domain")"
+  install -d -m 0755 "$live"
+  # Symlinks wie certbot
+  ln -sfn "$(realpath "$fullchain")" "${live}/fullchain.pem"
+  ln -sfn "$(realpath "$privkey")" "${live}/privkey.pem"
+  local cert chain
+  cert="$(gp_ssl_archive_latest "$domain" cert || true)"
+  chain="$(gp_ssl_archive_latest "$domain" chain || true)"
+  [[ -n "${cert:-}" && -f "$cert" ]] && ln -sfn "$(realpath "$cert")" "${live}/cert.pem" || true
+  [[ -n "${chain:-}" && -f "$chain" ]] && ln -sfn "$(realpath "$chain")" "${live}/chain.pem" || true
+
+  gp_warn "Let's Encrypt aus Archive wiederhergestellt: ${fullchain}"
+  gp_ssl_install_from_live "$dir" "$domain"
+  gp_ssl_setup_renew_hook "$domain" "$dir"
+  return 0
+}
+
+# Falls live-Domain-Ordner fehlt: irgendeine Domain mit Archive-Certs
+gp_ssl_discover_archive_domain() {
+  local want="$1" d
+  if [[ -d "/etc/letsencrypt/archive/${want}" ]] \
+    && gp_ssl_archive_latest "$want" fullchain >/dev/null 2>&1 \
+    && gp_ssl_archive_latest "$want" privkey >/dev/null 2>&1; then
+    echo "$want"
+    return 0
+  fi
+  [[ -d /etc/letsencrypt/archive ]] || return 1
+  for d in /etc/letsencrypt/archive/*/; do
+    [[ -d "$d" ]] || continue
+    d="$(basename "$d")"
+    if gp_ssl_archive_latest "$d" fullchain >/dev/null 2>&1 \
+      && gp_ssl_archive_latest "$d" privkey >/dev/null 2>&1; then
+      echo "$d"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # Falls Domain-Mismatch: erstes Live-Zertifikat finden (ohne README)
 gp_ssl_discover_live_domain() {
   local want="$1" d
@@ -301,7 +361,7 @@ gp_ssl_generate_letsencrypt() {
   install -d -m 0755 "$dir"
   gp_apt_install certbot openssl
 
-  local live_domain
+  local live_domain arch_domain
   if live_domain="$(gp_ssl_discover_live_domain "$domain")"; then
     if [[ "$live_domain" != "$domain" ]]; then
       gp_warn "Live-Cert für '${live_domain}' gefunden (gewünscht: ${domain}) — wird eingebunden"
@@ -311,11 +371,19 @@ gp_ssl_generate_letsencrypt() {
     return 0
   fi
 
+  # Archive retten BEVOR certbot (Rate-Limit!) — live/ war oft gelöscht, Certs sind noch da
+  if arch_domain="$(gp_ssl_discover_archive_domain "$domain")"; then
+    gp_warn "Kein live/-Link, aber Archive für '${arch_domain}' — stelle wieder her (kein neues Zertifikat)"
+    if gp_ssl_recover_from_archive "$dir" "$arch_domain"; then
+      gp_ssl_reload_proxy
+      return 0
+    fi
+  fi
+
   gp_ssl_release_port80
 
-  local certbot_ok=0
+  local certbot_ok=0 certbot_log="/tmp/gamepanel-certbot.out"
   local extra=()
-  # Force nur explizit — schützt vor Let's-Encrypt-Rate-Limit
   if [[ "${SSL_FORCE_REGEN:-no}" == "yes" ]]; then
     extra+=(--force-renewal)
   fi
@@ -325,8 +393,10 @@ gp_ssl_generate_letsencrypt() {
       --email "$email" \
       -d "$domain" \
       --preferred-challenges http \
-      "${extra[@]+"${extra[@]}"}"; then
+      "${extra[@]+"${extra[@]}"}" >"$certbot_log" 2>&1; then
     certbot_ok=1
+  else
+    cat "$certbot_log" >&2 || true
   fi
 
   if [[ "$certbot_ok" -ne 1 ]] && gp_ssl_has_live "$domain"; then
@@ -340,11 +410,38 @@ gp_ssl_generate_letsencrypt() {
     return 0
   fi
 
+  # Nach Rate-Limit / Fehler: nochmal Archive versuchen
+  if arch_domain="$(gp_ssl_discover_archive_domain "$domain")"; then
+    gp_warn "certbot fehlgeschlagen — stelle Let's Encrypt aus Archive wieder her"
+    if gp_ssl_recover_from_archive "$dir" "$arch_domain"; then
+      gp_ssl_reload_proxy
+      return 0
+    fi
+  fi
+
   gp_ssl_reload_proxy
+
+  if grep -qi 'too many certificates\|rate limit\|retry after' "$certbot_log" 2>/dev/null; then
+    local retry
+    retry="$(grep -oiE 'retry after [0-9]{4}-[0-9]{2}-[0-9]{2}[^ ]*' "$certbot_log" 2>/dev/null | head -1 || true)"
+    gp_err "Let's Encrypt Rate-Limit erreicht (5 Certs / 168h für ${domain})."
+    [[ -n "$retry" ]] && gp_msg "  ${retry}"
+    gp_msg "Bestehende Certs suchen:"
+    gp_msg "  sudo ls -la /etc/letsencrypt/archive/${domain}/ || true"
+    gp_msg "  sudo certbot certificates"
+    gp_msg "Kein neues Zertifikat möglich bis zum Retry — Archive restaurieren oder Temporary Self-Signed."
+    # Temporär Self-Signed damit Panel erreichbar bleibt (HSTS ist aus)
+    gp_warn "Temporäres Self-Signed bis Rate-Limit vorbei (Firefox: einmal Ausnahme erlauben)"
+    SSL_FORCE_REGEN=yes gp_ssl_generate_selfsigned "$dir" "$domain"
+    echo "selfsigned-ratelimit" > "${dir}/.ssl_mode"
+    gp_ssl_reload_proxy
+    gp_ok "Panel läuft mit Self-Signed bis LE wieder möglich ist."
+    return 0
+  fi
+
   gp_err "Let's Encrypt fehlgeschlagen für ${domain}."
   gp_msg "Prüfen: DNS A-Record, Port 80 öffentlich, /var/log/letsencrypt/letsencrypt.log"
-  gp_msg "Wenn /etc/letsencrypt/live/${domain}/ schon existiert: Panel-Install erneut ausführen"
-  gp_msg "  (kopiert nur — stellt KEIN neues Zertifikat aus)."
+  gp_msg "Archive: ls /etc/letsencrypt/archive/${domain}/"
   gp_die "Abbruch: kein gültiges Let's Encrypt Zertifikat."
 }
 
