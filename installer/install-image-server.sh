@@ -70,10 +70,10 @@ gp_install_image_server() {
   export IMAGE_ROOT
   gp_apt_install openssh-server python3 openssl rsync curl jq
   gp_run_step img_layout "Image-Verzeichnisstruktur" "_gp_img_layout"
-  gp_run_step img_user "Image-Benutzer" gp_image_user_create
-  gp_run_step img_sftp "SFTP (internal-sftp)" gp_sftp_sshd_configure
-  gp_run_step img_node_keys "Node SSH-Schlüssel" gp_image_node_access_keys
-  gp_run_step img_keys "SSH Authorized Keys (optional extra)" gp_sftp_authorized_keys
+  gp_run_step_always img_user "Image-Benutzer" gp_image_user_create
+  gp_run_step_always img_sftp "SFTP (internal-sftp)" gp_sftp_sshd_configure
+  gp_run_step_always img_node_keys "Node SSH-Schlüssel" gp_image_node_access_keys
+  gp_run_step_always img_keys "SSH Authorized Keys (optional extra)" gp_sftp_authorized_keys
   gp_run_step img_manifest "Manifest index.json" gp_image_manifest_refresh
   gp_run_step img_ftps "Optional FTPS" gp_vsftpd_install_optional
   gp_run_step img_proftpd "Optional ProFTPd" gp_proftpd_install_optional
