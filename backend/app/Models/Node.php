@@ -56,4 +56,17 @@ class Node extends Model
     {
         return $this->hasMany(PanelJob::class);
     }
+
+    /**
+     * phpMyAdmin-URL aus FQDN (Hostname mit Punkt) oder Fallback auf IP.
+     */
+    public static function preferredPhpmyadminUrl(string $hostname, string $ipAddress): string
+    {
+        $host = trim($hostname);
+        if ($host !== '' && str_contains($host, '.') && filter_var($host, FILTER_VALIDATE_IP) === false) {
+            return 'https://'.rtrim($host, '/').'/';
+        }
+
+        return 'https://'.rtrim($ipAddress, '/').'/';
+    }
 }

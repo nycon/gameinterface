@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 class ServerPowerService
 {
-    private const ACTIONS = ['start', 'stop', 'restart', 'kill', 'install', 'update', 'backup', 'restore', 'uninstall', 'delete'];
+    private const ACTIONS = ['start', 'stop', 'restart', 'kill', 'install', 'update', 'backup', 'restore', 'uninstall', 'delete', 'diagnostics'];
 
     public function __construct(
         private readonly AuditLogger $audit,
@@ -21,6 +21,8 @@ class ServerPowerService
             throw new InvalidArgumentException("Invalid power action: {$action}");
         }
 
+        $server->loadMissing(['allocations']);
+
         $base = [
             'server_id' => $server->id,
             'server_uuid' => $server->uuid,
@@ -29,8 +31,20 @@ class ServerPowerService
             'action' => $action,
         ];
 
+        $alloc = $server->allocations->first();
+        if ($alloc) {
+            $base['port'] = (int) $alloc->port;
+            $base['protocol'] = $alloc->protocol;
+            $base['ip'] = $alloc->ip;
+        }
+
         if (in_array($action, ['install', 'update'], true)) {
             $base = array_merge($this->installPayload->for($server, $payload), ['action' => $action]);
+            if ($alloc) {
+                $base['port'] = $base['port'] ?? (int) $alloc->port;
+                $base['protocol'] = $base['protocol'] ?? $alloc->protocol;
+                $base['ip'] = $base['ip'] ?? $alloc->ip;
+            }
         } else {
             $base = array_merge($base, $payload);
         }

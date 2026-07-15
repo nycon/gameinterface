@@ -4,7 +4,7 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ServerActions from '@/components/ServerActions.vue'
 import { useServersStore } from '@/stores/servers'
-import { serverGameName, serverPort } from '@/types'
+import { serverGameName, serverPort, serverConnectAddress } from '@/types'
 
 const route = useRoute()
 const store = useServersStore()
@@ -33,9 +33,10 @@ onMounted(() => {
     <div class="flex flex-wrap items-center justify-between gap-4 border border-panel-border bg-panel-surface px-4 py-3">
       <div>
         <h2 class="text-lg font-semibold">{{ store.currentServer.name }}</h2>
-        <div class="mt-1 flex items-center gap-3 text-sm text-panel-muted">
+        <div class="mt-1 flex flex-wrap items-center gap-3 text-sm text-panel-muted">
           <span>{{ serverGameName(store.currentServer) }}</span>
-          <span class="font-mono">Port {{ serverPort(store.currentServer) }}</span>
+          <span class="font-mono text-panel-accent">{{ serverConnectAddress(store.currentServer) }}</span>
+          <span class="font-mono text-xs">Port {{ serverPort(store.currentServer) }}</span>
           <StatusBadge :status="store.currentServer.status" />
         </div>
       </div>

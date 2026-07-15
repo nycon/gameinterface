@@ -5,7 +5,7 @@ import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ServerActions from '@/components/ServerActions.vue'
 import { useServersStore } from '@/stores/servers'
-import { serverGameName, serverMemoryDisplay, serverPort } from '@/types'
+import { serverGameName, serverMemoryDisplay, serverConnectAddress } from '@/types'
 
 const store = useServersStore()
 
@@ -13,7 +13,7 @@ const columns = [
   { key: 'name', label: 'Name' },
   { key: 'game', label: 'Spiel' },
   { key: 'status', label: 'Status' },
-  { key: 'port', label: 'Port' },
+  { key: 'address', label: 'Adresse' },
   { key: 'memory', label: 'RAM' },
 ]
 
@@ -40,8 +40,8 @@ onMounted(() => {
       <template #cell-status="{ row }">
         <StatusBadge :status="row.status" />
       </template>
-      <template #cell-port="{ row }">
-        <span class="font-mono text-xs">{{ serverPort(row) }}</span>
+      <template #cell-address="{ row }">
+        <span class="font-mono text-xs text-panel-accent">{{ serverConnectAddress(row) }}</span>
       </template>
       <template #cell-memory="{ row }">
         <span class="font-mono text-xs">{{ serverMemoryDisplay(row) }}</span>

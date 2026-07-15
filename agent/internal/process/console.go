@@ -92,7 +92,7 @@ func scanLines(r io.Reader, handler func(string)) {
 }
 
 func JournalLogs(ctx context.Context, unit string, lines int) ([]string, error) {
-	args := []string{"-u", unit, "--no-pager", "-n", fmt.Sprintf("%d", lines)}
+	args := []string{"-u", unit, "--no-pager", "-n", fmt.Sprintf("%d", lines), "--output=cat"}
 	cmd := exec.CommandContext(ctx, "journalctl", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -101,8 +101,29 @@ func JournalLogs(ctx context.Context, unit string, lines int) ([]string, error) 
 
 	var result []string
 	scanner := bufio.NewScanner(bytes.NewReader(out))
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		result = append(result, scanner.Text())
 	}
 	return result, scanner.Err()
+}
+
+// FollowJournal streamt journalctl -f Zeilen an onLine, bis ctx abgebrochen wird.
+func FollowJournal(ctx context.Context, unit string, onLine func(string)) error {
+	args := []string{"-u", unit, "-f", "-n", "80", "--output=cat", "--no-pager"}
+	cmd := exec.CommandContext(ctx, "journalctl", args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("journal follow stdout: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("journal follow starten: %w", err)
+	}
+
+	scanLines(stdout, onLine)
+	_ = cmd.Wait()
+	if ctx.Err() != nil {
+		return nil
+	}
+	return nil
 }

@@ -20,9 +20,14 @@ class DatabaseController extends Controller
     {
         Gate::authorize('view', $server);
 
-        $server->loadMissing('node:id,ip_address,phpmyadmin_url');
-        $phpmyadmin = $server->node?->phpmyadmin_url
-            ?: ($server->node?->ip_address ? 'https://'.$server->node->ip_address.'/' : null);
+        $server->loadMissing('node:id,hostname,ip_address,phpmyadmin_url');
+        $phpmyadmin = $server->node?->phpmyadmin_url;
+        if (! filled($phpmyadmin) && $server->node) {
+            $phpmyadmin = \App\Models\Node::preferredPhpmyadminUrl(
+                (string) $server->node->hostname,
+                (string) $server->node->ip_address,
+            );
+        }
 
         return response()->json([
             'data' => $server->databases,
@@ -35,13 +40,19 @@ class DatabaseController extends Controller
         Gate::authorize('update', $server);
         abort_unless($database->server_id === $server->id, 404);
 
-        $server->loadMissing('node:id,ip_address,phpmyadmin_url');
+        $server->loadMissing('node:id,hostname,ip_address,phpmyadmin_url');
+        $phpmyadmin = $server->node?->phpmyadmin_url;
+        if (! filled($phpmyadmin) && $server->node) {
+            $phpmyadmin = \App\Models\Node::preferredPhpmyadminUrl(
+                (string) $server->node->hostname,
+                (string) $server->node->ip_address,
+            );
+        }
 
         return response()->json([
             'database' => $database,
             'password' => $this->encryption->decrypt($database->password_encrypted),
-            'phpmyadmin_url' => $server->node?->phpmyadmin_url
-                ?: ($server->node?->ip_address ? 'https://'.$server->node->ip_address.'/' : null),
+            'phpmyadmin_url' => $phpmyadmin,
         ]);
     }
 

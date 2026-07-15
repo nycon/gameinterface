@@ -68,6 +68,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::apiResource('templates', GameTemplateController::class);
 
     Route::apiResource('servers', AdminServerController::class);
+    Route::post('/servers/{server}/diagnostics', [AdminServerController::class, 'diagnostics']);
     Route::post('/servers/{server}/{action}', [AdminServerController::class, 'power'])
         ->whereIn('action', ['start', 'stop', 'restart', 'kill', 'install', 'update', 'backup', 'uninstall', 'delete']);
 

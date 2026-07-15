@@ -21,7 +21,7 @@ class ServerController extends Controller
     public function index(): JsonResponse
     {
         return response()->json(
-            Server::query()->with(['owner:id,name,email', 'node:id,name', 'template:id,name,slug', 'allocations'])
+            Server::query()->with(['owner:id,name,email', 'node:id,name,ip_address,hostname,phpmyadmin_url', 'template:id,name,slug', 'allocations'])
                 ->latest()->paginate(25)
         );
     }
@@ -130,5 +130,30 @@ class ServerController extends Controller
         $job = $this->power->dispatch($server, $action);
 
         return response()->json(['job' => $job]);
+    }
+
+    public function diagnostics(Server $server): JsonResponse
+    {
+        $server->load(['node:id,name,ip_address,hostname,phpmyadmin_url', 'allocations']);
+        $alloc = $server->allocations->first();
+        $job = $this->power->dispatch($server, 'diagnostics');
+
+        $events = $server->events()
+            ->whereIn('type', ['console.output', 'console.history', 'server.log'])
+            ->latest('id')
+            ->limit(60)
+            ->get()
+            ->reverse()
+            ->values();
+
+        return response()->json([
+            'connect_address' => $alloc ? ($alloc->ip.':'.$alloc->port) : null,
+            'node_ip' => $server->node?->ip_address,
+            'node_hostname' => $server->node?->hostname,
+            'phpmyadmin_url' => $server->node?->phpmyadmin_url,
+            'status' => $server->status,
+            'job' => $job,
+            'recent_events' => $events,
+        ]);
     }
 }

@@ -34,15 +34,17 @@ class DatabaseController extends Controller
 
     public function reveal(ServerDatabase $database): JsonResponse
     {
-        $database->loadMissing(['server.node:id,name,ip_address,phpmyadmin_url,mysql_admin_user']);
+        $database->loadMissing(['server.node:id,name,hostname,ip_address,phpmyadmin_url,mysql_admin_user']);
+        $node = $database->server?->node;
+        $phpmyadmin = $node?->phpmyadmin_url;
+        if (! filled($phpmyadmin) && $node) {
+            $phpmyadmin = \App\Models\Node::preferredPhpmyadminUrl((string) $node->hostname, (string) $node->ip_address);
+        }
 
         return response()->json([
             'database' => $database,
             'password' => $this->encryption->decrypt($database->password_encrypted),
-            'phpmyadmin_url' => $database->server?->node?->phpmyadmin_url
-                ?: ($database->server?->node?->ip_address
-                    ? 'https://'.$database->server->node->ip_address.'/'
-                    : null),
+            'phpmyadmin_url' => $phpmyadmin,
         ]);
     }
 
@@ -52,11 +54,12 @@ class DatabaseController extends Controller
         abort_unless($nodeId > 0, 422, 'node_id required');
 
         $node = \App\Models\Node::query()->findOrFail($nodeId);
+        $phpmyadmin = $node->phpmyadmin_url
+            ?: \App\Models\Node::preferredPhpmyadminUrl((string) $node->hostname, (string) $node->ip_address);
 
         return response()->json([
-            'node' => $node->only(['id', 'name', 'ip_address', 'phpmyadmin_url', 'mysql_admin_user']),
-            'phpmyadmin_url' => $node->phpmyadmin_url
-                ?: ($node->ip_address ? 'https://'.$node->ip_address.'/' : null),
+            'node' => $node->only(['id', 'name', 'ip_address', 'hostname', 'phpmyadmin_url', 'mysql_admin_user']),
+            'phpmyadmin_url' => $phpmyadmin,
             'username' => $node->mysql_admin_user ?: 'gamepanel-agent',
             'password' => $this->encryption->decrypt($node->mysql_admin_password_encrypted),
         ]);

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gamepanel/agent/internal/api"
@@ -31,18 +32,19 @@ import (
 )
 
 type Handler struct {
-	cfg      *config.Config
-	api      *api.Client
-	systemd  *systemd.Manager
-	users    *users.Manager
-	files    *files.Manager
-	images   *images.Downloader
-	backups  *backups.Manager
-	firewall *firewall.Manager
-	steamcmd *steamcmd.Runner
-	db       *database.Manager
-	ftp      *ftpaccount.Manager
-	log      *slog.Logger
+	cfg       *config.Config
+	api       *api.Client
+	systemd   *systemd.Manager
+	users     *users.Manager
+	files     *files.Manager
+	images    *images.Downloader
+	backups   *backups.Manager
+	firewall  *firewall.Manager
+	steamcmd  *steamcmd.Runner
+	db        *database.Manager
+	ftp       *ftpaccount.Manager
+	log       *slog.Logger
+	followers sync.Map // unitSID -> context.CancelFunc (Live-Konsole)
 }
 
 func NewHandler(cfg *config.Config, client *api.Client, log *slog.Logger) *Handler {
@@ -141,14 +143,16 @@ func (h *Handler) Handle(ctx context.Context, job api.Job) error {
 		err = h.handleInstall(jobCtx, job, sid)
 		serverStatus = "offline"
 	case "start":
-		err = h.handleStart(jobCtx, sid)
+		err = h.handleStart(jobCtx, job, sid)
 		serverStatus = "online"
 	case "stop":
 		err = h.handleStop(jobCtx, sid)
 		serverStatus = "offline"
 	case "restart":
-		err = h.handleRestart(jobCtx, sid)
+		err = h.handleRestart(jobCtx, job, sid)
 		serverStatus = "online"
+	case "diagnostics":
+		result, err = h.handleDiagnostics(jobCtx, job, sid)
 	case "update":
 		err = h.handleUpdate(jobCtx, job, sid)
 		serverStatus = "offline"
@@ -395,20 +399,128 @@ func (h *Handler) handleInstall(ctx context.Context, job api.Job, serverID strin
 	return nil
 }
 
-func (h *Handler) handleStart(_ context.Context, serverID string) error {
-	return h.systemd.Start(serverID)
+func (h *Handler) handleStart(_ context.Context, job api.Job, serverID string) error {
+	if err := h.systemd.Start(serverID); err != nil {
+		return err
+	}
+	h.startConsoleFollow(numericServerID(job), serverID)
+	return nil
 }
 
 func (h *Handler) handleStop(_ context.Context, serverID string) error {
+	h.stopConsoleFollow(serverID)
 	return h.systemd.Stop(serverID)
 }
 
-func (h *Handler) handleRestart(_ context.Context, serverID string) error {
-	return h.systemd.Restart(serverID)
+func (h *Handler) handleRestart(_ context.Context, job api.Job, serverID string) error {
+	h.stopConsoleFollow(serverID)
+	if err := h.systemd.Restart(serverID); err != nil {
+		return err
+	}
+	h.startConsoleFollow(numericServerID(job), serverID)
+	return nil
 }
 
 func (h *Handler) handleKill(_ context.Context, serverID string) error {
+	h.stopConsoleFollow(serverID)
 	return h.systemd.Kill(serverID)
+}
+
+func (h *Handler) stopConsoleFollow(serverID string) {
+	if v, ok := h.followers.LoadAndDelete(serverID); ok {
+		if cancel, ok := v.(context.CancelFunc); ok {
+			cancel()
+		}
+	}
+}
+
+func (h *Handler) startConsoleFollow(numericID uint64, serverID string) {
+	if numericID == 0 || serverID == "" {
+		return
+	}
+	h.stopConsoleFollow(serverID)
+	ctx, cancel := context.WithCancel(context.Background())
+	h.followers.Store(serverID, cancel)
+
+	unit := h.systemd.UnitName(serverID)
+	go func() {
+		defer h.followers.Delete(serverID)
+		_ = h.api.PostEvent(context.Background(), numericID, "console.output",
+			"[gamepanel] Live-Konsole aktiv — "+unit, nil)
+		err := process.FollowJournal(ctx, unit, func(line string) {
+			line = strings.TrimRight(line, "\r\n")
+			if line == "" {
+				return
+			}
+			if len(line) > 4000 {
+				line = line[:4000] + "…"
+			}
+			_ = h.api.PostEvent(context.Background(), numericID, "console.output", line, nil)
+		})
+		if err != nil && ctx.Err() == nil {
+			h.log.Warn("console follow beendet", "unit", unit, "error", err)
+		}
+	}()
+}
+
+func (h *Handler) handleDiagnostics(ctx context.Context, job api.Job, serverID string) (map[string]any, error) {
+	var payload struct {
+		Port int `json:"port"`
+	}
+	_ = json.Unmarshal(job.Payload, &payload)
+
+	active, activeErr := h.systemd.IsActive(serverID)
+	unit := h.systemd.UnitName(serverID)
+	listening := false
+	if payload.Port > 0 {
+		listening = portListening(payload.Port)
+	}
+
+	lines, _ := process.JournalLogs(ctx, unit, 40)
+	numericID := numericServerID(job)
+	summary := fmt.Sprintf(
+		"[diagnose] unit=%s active=%v listen_port=%d listening=%v",
+		unit, active, payload.Port, listening,
+	)
+	if numericID > 0 {
+		_ = h.api.PostEvent(ctx, numericID, "console.output", summary, nil)
+		for _, line := range lines {
+			_ = h.api.PostEvent(ctx, numericID, "console.output", line, nil)
+		}
+	}
+
+	result := map[string]any{
+		"ok":            activeErr == nil,
+		"unit":          unit,
+		"active":        active,
+		"port":          payload.Port,
+		"listening":     listening,
+		"active_error":  nil,
+		"journal_lines": len(lines),
+	}
+	if activeErr != nil {
+		result["active_error"] = activeErr.Error()
+		result["ok"] = false
+	}
+	if payload.Port > 0 && active && !listening {
+		result["ok"] = false
+		result["hint"] = "Prozess läuft, Port hört nicht — Firewall, Bind-Adresse oder Startfehler prüfen"
+	}
+	return result, nil
+}
+
+func portListening(port int) bool {
+	if port <= 0 {
+		return false
+	}
+	out, err := exec.Command("ss", "-ltnH", "sport", "=", fmt.Sprintf(":%d", port)).CombinedOutput()
+	if err == nil && strings.TrimSpace(string(out)) != "" {
+		return true
+	}
+	out2, err2 := exec.Command("bash", "-c",
+		fmt.Sprintf("ss -ltn 2>/dev/null | grep -E ':%d([[:space:]]|$)' || true", port),
+	).CombinedOutput()
+	return err2 == nil && strings.TrimSpace(string(out2)) != ""
 }
 
 func (h *Handler) handleUninstall(_ context.Context, job api.Job, serverID string) error {
@@ -418,6 +530,7 @@ func (h *Handler) handleUninstall(_ context.Context, job api.Job, serverID strin
 	}
 	_ = json.Unmarshal(job.Payload, &payload)
 
+	h.stopConsoleFollow(serverID)
 	_ = h.systemd.Remove(serverID)
 
 	dir := payload.InstallPath

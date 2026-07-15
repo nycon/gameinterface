@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { createNode, fetchNodes, regenerateNodeDeployToken } from '@/api/nodes'
+import { createNode, fetchNodes, regenerateNodeDeployToken, updateNode } from '@/api/nodes'
 import { getErrorMessage } from '@/api/client'
 import type { Node } from '@/types'
 
@@ -24,8 +24,9 @@ const form = ref({
 
 const columns = [
   { key: 'name', label: 'Name' },
-  { key: 'hostname', label: 'Hostname' },
+  { key: 'hostname', label: 'Hostname / FQDN' },
   { key: 'ip_address', label: 'IP' },
+  { key: 'phpmyadmin_url', label: 'phpMyAdmin' },
   { key: 'status', label: 'Status' },
   { key: 'servers_count', label: 'Server' },
   { key: 'last_heartbeat_at', label: 'Letzter Heartbeat' },
@@ -77,6 +78,19 @@ async function regenerate(id: number) {
     error.value = getErrorMessage(err, 'Deploy-Token konnte nicht erzeugt werden')
   } finally {
     regeneratingId.value = null
+  }
+}
+
+async function editPhpmyadmin(row: Node) {
+  const current = row.phpmyadmin_url || `https://${row.hostname}/`
+  const next = window.prompt('phpMyAdmin-URL (https://fqdn/)', current)
+  if (next === null) return
+  error.value = null
+  try {
+    await updateNode(row.id, { phpmyadmin_url: next.trim() || null })
+    await load()
+  } catch (err) {
+    error.value = getErrorMessage(err, 'phpMyAdmin-URL konnte nicht gespeichert werden')
   }
 }
 
@@ -136,8 +150,16 @@ onMounted(load)
           <input v-model="form.name" required class="panel-input" />
         </div>
         <div>
-          <label class="mb-1 block text-xs uppercase tracking-wide text-panel-muted">Hostname</label>
-          <input v-model="form.hostname" required class="panel-input" />
+          <label class="mb-1 block text-xs uppercase tracking-wide text-panel-muted">Hostname / FQDN</label>
+          <input
+            v-model="form.hostname"
+            required
+            class="panel-input"
+            placeholder="node.example.com"
+          />
+          <p class="mt-1 text-xs text-panel-muted">
+            Domain für Let's Encrypt / phpMyAdmin — wird im Panel hinterlegt und an den Installer übergeben.
+          </p>
         </div>
         <div>
           <label class="mb-1 block text-xs uppercase tracking-wide text-panel-muted">IP-Adresse</label>
@@ -152,6 +174,16 @@ onMounted(load)
     <DataTable :columns="columns" :rows="nodes" :loading="loading">
       <template #cell-status="{ row }">
         <StatusBadge :status="row.status" />
+      </template>
+      <template #cell-phpmyadmin_url="{ row }">
+        <button
+          type="button"
+          class="max-w-[14rem] truncate text-left font-mono text-xs text-panel-accent hover:underline"
+          :title="row.phpmyadmin_url || 'URL setzen'"
+          @click="editPhpmyadmin(row)"
+        >
+          {{ row.phpmyadmin_url || 'setzen…' }}
+        </button>
       </template>
       <template #cell-last_heartbeat_at="{ value }">
         <span class="font-mono text-xs">{{ value ?? '—' }}</span>

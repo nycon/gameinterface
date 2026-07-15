@@ -15,7 +15,11 @@ class ServerController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query = Server::query()->with(['node:id,name', 'template:id,name,slug']);
+        $query = Server::query()->with([
+            'node:id,name,ip_address,hostname',
+            'template:id,name,slug',
+            'allocations',
+        ]);
 
         if (! $request->user()->is_admin && ! $request->user()->hasRole('admin')) {
             $query->where('user_id', $request->user()->id);

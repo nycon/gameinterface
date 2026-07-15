@@ -39,6 +39,9 @@ export interface ServerOwner {
 export interface ServerNode {
   id: number
   name: string
+  ip_address?: string
+  hostname?: string
+  phpmyadmin_url?: string | null
 }
 
 export interface ServerTemplate {
@@ -85,6 +88,16 @@ export function serverOwnerName(server: Server): string {
 
 export function serverPort(server: Server): string | number {
   return server.allocations?.[0]?.port ?? '—'
+}
+
+/** Verbindungsadresse IP:Port für den Spieler */
+export function serverConnectAddress(server: Server): string {
+  const alloc = server.allocations?.[0]
+  const ip = alloc?.ip || server.node?.ip_address
+  const port = alloc?.port
+  if (ip && port) return `${ip}:${port}`
+  if (ip) return String(ip)
+  return '—'
 }
 
 export function serverMemoryDisplay(server: Server): string {

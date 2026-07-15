@@ -36,11 +36,18 @@ class NodeController extends Controller
             'cpu_cores' => ['nullable', 'integer', 'min:1'],
             'memory_mb' => ['nullable', 'integer', 'min:1'],
             'disk_gb' => ['nullable', 'integer', 'min:1'],
+            'phpmyadmin_url' => ['nullable', 'string', 'max:255'],
         ]);
+
+        $phpmyadmin = $data['phpmyadmin_url'] ?? null;
+        unset($data['phpmyadmin_url']);
+        if (! filled($phpmyadmin)) {
+            $phpmyadmin = Node::preferredPhpmyadminUrl($data['hostname'], $data['ip_address']);
+        }
 
         $node = Node::query()->create($data + [
             'status' => 'offline',
-            'phpmyadmin_url' => 'https://'.$data['ip_address'].'/',
+            'phpmyadmin_url' => $phpmyadmin,
         ]);
 
         // Port-Pool vorbereiten (Minecraft 25565+), damit Server-Install ohne manuellen Port läuft
@@ -80,6 +87,7 @@ class NodeController extends Controller
             'cpu_cores' => ['nullable', 'integer'],
             'memory_mb' => ['nullable', 'integer'],
             'disk_gb' => ['nullable', 'integer'],
+            'phpmyadmin_url' => ['nullable', 'string', 'max:255'],
         ]);
 
         $node->update($data);

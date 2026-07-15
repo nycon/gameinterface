@@ -36,9 +36,29 @@ async function loadHistory() {
   }
 }
 
+function startPolling() {
+  if (pollTimer) return
+  pollTimer = window.setInterval(async () => {
+    try {
+      const data = await fetchConsoleHistory(props.serverId, 80)
+      for (const event of data.events ?? []) {
+        const id = Number(event.id) || 0
+        if (id <= lastEventId) continue
+        lastEventId = id
+        writeln(String(event.message ?? ''))
+      }
+    } catch {
+      // ignore transient errors
+    }
+  }, 2000)
+}
+
 function subscribeEcho() {
   const auth = useAuthStore()
-  if (!auth.token) return
+  if (!auth.token) {
+    startPolling()
+    return
+  }
   try {
     echo = createEcho(auth.token)
     echo
@@ -48,27 +68,12 @@ function subscribeEcho() {
         if (payload.id) lastEventId = payload.id
         writeln(String(payload.message ?? ''))
       })
-    writeln('\x1b[32mLive-Stream verbunden (Reverb)\x1b[0m')
+    writeln('\x1b[32mLive-Stream verbunden (Reverb + Polling)\x1b[0m')
   } catch {
     writeln('\x1b[33mWebSocket nicht verfügbar — Polling-Fallback\x1b[0m')
-    startPolling()
   }
-}
-
-function startPolling() {
-  pollTimer = window.setInterval(async () => {
-    try {
-      const data = await fetchConsoleHistory(props.serverId, 50)
-      for (const event of data.events ?? []) {
-        const id = Number(event.id) || 0
-        if (id <= lastEventId) continue
-        lastEventId = id
-        writeln(String(event.message ?? ''))
-      }
-    } catch {
-      // ignore
-    }
-  }, 2000)
+  // Polling immer parallel: deckt fehlende WS-Events / Reverb-Probleme ab
+  startPolling()
 }
 
 async function submitCommand(cmd: string) {

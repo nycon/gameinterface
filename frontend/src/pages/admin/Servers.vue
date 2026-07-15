@@ -13,14 +13,17 @@ import {
   serverGameName,
   serverNodeName,
   serverOwnerName,
-  serverPort,
+  serverConnectAddress,
 } from '@/types'
 import type { Node, Template, User } from '@/types'
+import { pollJob } from '@/api/jobs'
 
 const store = useServersStore()
 const showForm = ref(false)
 const creating = ref(false)
 const formError = ref<string | null>(null)
+const diagnoseMsg = ref<string | null>(null)
+const diagnosingId = ref<number | null>(null)
 const users = ref<User[]>([])
 const nodes = ref<Node[]>([])
 const templates = ref<Template[]>([])
@@ -39,7 +42,7 @@ const columns = [
   { key: 'game', label: 'Spiel' },
   { key: 'status', label: 'Status' },
   { key: 'node', label: 'Node' },
-  { key: 'port', label: 'Port' },
+  { key: 'address', label: 'Adresse' },
   { key: 'owner', label: 'Kunde' },
 ]
 
@@ -74,6 +77,34 @@ async function createServer() {
   }
 }
 
+async function runDiagnostics(id: number) {
+  diagnosingId.value = id
+  diagnoseMsg.value = null
+  formError.value = null
+  try {
+    const { data } = await apiClient.post<{
+      connect_address?: string | null
+      job: { uuid: string }
+      recent_events?: { message?: string }[]
+    }>(`/admin/servers/${id}/diagnostics`)
+    const job = await pollJob(data.job.uuid, { timeoutMs: 60_000 })
+    const r = (job.result ?? {}) as Record<string, unknown>
+    const lines = [
+      `Adresse: ${data.connect_address ?? '—'}`,
+      `Unit aktiv: ${String(r.active ?? '?')}`,
+      `Port listening: ${String(r.listening ?? '?')} (Port ${String(r.port ?? '?')})`,
+      r.hint ? `Hinweis: ${String(r.hint)}` : '',
+      job.status === 'failed' ? `Job fehlgeschlagen: ${job.error ?? ''}` : '',
+    ].filter(Boolean)
+    diagnoseMsg.value = lines.join('\n')
+    await store.loadServers(true)
+  } catch (err) {
+    formError.value = getErrorMessage(err, 'Diagnose fehlgeschlagen — Agent erreichbar?')
+  } finally {
+    diagnosingId.value = null
+  }
+}
+
 onMounted(() => {
   store.loadServers(true).catch(() => {})
   loadMeta().catch(() => {})
@@ -88,6 +119,12 @@ onMounted(() => {
         {{ showForm ? 'Abbrechen' : 'Server erstellen' }}
       </button>
     </div>
+
+    <p v-if="formError" class="text-sm text-panel-danger whitespace-pre-wrap">{{ formError }}</p>
+    <pre
+      v-if="diagnoseMsg"
+      class="overflow-x-auto border border-panel-border bg-panel-surface p-3 font-mono text-xs text-panel-fg"
+    >{{ diagnoseMsg }}</pre>
 
     <form
       v-if="showForm"
@@ -145,14 +182,27 @@ onMounted(() => {
       <template #cell-node="{ row }">
         {{ serverNodeName(row) }}
       </template>
-      <template #cell-port="{ row }">
-        <span class="font-mono text-xs">{{ serverPort(row) }}</span>
+      <template #cell-address="{ row }">
+        <span class="font-mono text-xs">{{ serverConnectAddress(row) }}</span>
       </template>
       <template #cell-owner="{ row }">
         {{ serverOwnerName(row) }}
       </template>
       <template #actions="{ row }">
-        <ServerActions :server="row" admin />
+        <div class="flex flex-wrap items-center gap-2">
+          <ServerActions :server="row" admin />
+          <button
+            type="button"
+            class="panel-btn-secondary text-xs"
+            :disabled="diagnosingId === row.id"
+            @click="runDiagnostics(row.id)"
+          >
+            {{ diagnosingId === row.id ? 'Prüfe…' : 'Diagnose' }}
+          </button>
+          <RouterLink :to="`/client/servers/${row.id}/console`" class="text-xs text-panel-accent hover:underline">
+            Konsole
+          </RouterLink>
+        </div>
       </template>
     </DataTable>
   </div>
