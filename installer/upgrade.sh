@@ -9,14 +9,29 @@ source "${INSTALLER_DIR}/lib/docker.sh"
 
 gp_upgrade_panel() {
   local dir="${GAMEPANEL_PANEL_DIR:-/opt/gamepanel}"
+  local src="${GAMEPANEL_SOURCE_DIR:-}"
   [[ -f "${dir}/docker-compose.yml" ]] || gp_die "Kein Panel unter $dir"
-  gp_info "Images aktualisieren…"
-  (cd "$dir" && gp_docker_compose pull)
+
+  if [[ -z "$src" && -d /opt/gamepanel-src ]]; then
+    src=/opt/gamepanel-src
+  fi
+  if [[ -n "$src" && -d "$src" ]]; then
+    gp_info "Sync Quellcode: $src → $dir"
+    rsync -a --delete \
+      --exclude '.git' --exclude 'node_modules' --exclude 'vendor' \
+      --exclude 'frontend/dist' --exclude 'backend/vendor' \
+      --exclude 'deploy/nginx/certs' --exclude '.env' \
+      "$src"/ "$dir"/
+  fi
+
+  gp_info "Container neu bauen (Frontend + Backend)…"
+  (cd "$dir" && gp_docker_compose build --pull)
   (cd "$dir" && gp_docker_compose up -d)
   gp_info "Migrationen…"
-  (cd "$dir" && gp_docker_compose exec -T app php artisan migrate --force --no-interaction) || gp_warn "Migration übersprungen/fehlgeschlagen"
-  gp_unset_marker panel_migrate
-  gp_set_marker panel_migrate
+  (cd "$dir" && gp_docker_compose exec -T backend php artisan migrate --force --no-interaction) \
+    || (cd "$dir" && gp_docker_compose exec -T app php artisan migrate --force --no-interaction) \
+    || gp_warn "Migration übersprungen/fehlgeschlagen"
+  gp_ok "Panel aktualisiert — Hard-Reload im Browser (Ctrl+Shift+R)"
 }
 
 gp_upgrade_node() {
