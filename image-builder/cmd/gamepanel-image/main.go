@@ -36,6 +36,10 @@ func main() {
 		}
 		fmt.Printf("build erfolgreich: %s %s (%d dateien, sha256=%s)\n",
 			m.Slug, m.Version, m.FileCount, m.SHA256)
+		fmt.Printf("\nPanel: Image ist nur auf Disk — im Admin unter Images registrieren:\n")
+		fmt.Printf("  Slug=%s Version=%s SHA256=%s\n", m.Slug, m.Version, m.SHA256)
+		fmt.Printf("  oder: docker compose exec backend php artisan gamepanel:image-register %s %s --sha256=%s\n",
+			m.Slug, m.Version, m.SHA256)
 
 	case "update":
 		slug := requireArg(os.Args, 2, "template")

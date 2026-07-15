@@ -61,6 +61,7 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::post('/image-servers/{image_server}/deploy-token', [ImageServerController::class, 'createDeployToken']);
 
     Route::apiResource('images', ImageController::class)->except(['update']);
+    Route::post('/images/register', [ImageController::class, 'register']);
     Route::post('/images/{image}/versions', [ImageController::class, 'storeVersion']);
 
     Route::apiResource('templates', GameTemplateController::class);

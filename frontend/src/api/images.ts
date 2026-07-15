@@ -3,6 +3,7 @@ import type {
   CreateImageServerResponse,
   GameImage,
   ImageServer,
+  ImageVersion,
   PaginatedResponse,
 } from '@/types'
 
@@ -55,5 +56,32 @@ export async function fetchImages(page = 1): Promise<PaginatedResponse<GameImage
   const { data } = await apiClient.get<PaginatedResponse<GameImage>>('/admin/images', {
     params: { page },
   })
+  return data
+}
+
+export async function createImage(payload: {
+  name: string
+  slug?: string
+  description?: string
+  game_template_id?: number | null
+}): Promise<GameImage> {
+  const { data } = await apiClient.post<GameImage>('/admin/images', payload)
+  return data
+}
+
+export async function registerImage(payload: {
+  slug: string
+  version: string
+  name?: string
+  description?: string
+  game_template_id?: number | null
+  checksum_sha256: string
+  size_bytes?: number
+  is_latest?: boolean
+}): Promise<{ image: GameImage; version: ImageVersion }> {
+  const { data } = await apiClient.post<{ image: GameImage; version: ImageVersion }>(
+    '/admin/images/register',
+    payload,
+  )
   return data
 }
