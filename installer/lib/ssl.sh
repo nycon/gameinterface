@@ -58,46 +58,67 @@ gp_ssl_has_live() {
 gp_ssl_archive_latest() {
   local domain="$1" kind="$2" # fullchain|privkey|cert|chain
   local arch="/etc/letsencrypt/archive/${domain}"
+  local f
   [[ -d "$arch" ]] || return 1
-  ls -1 "${arch}/${kind}"*.pem 2>/dev/null | sort -V | tail -1
+  # shellcheck disable=SC2086,SC2012
+  f="$(ls -1 "${arch}/${kind}"*.pem 2>/dev/null | sort -V | tail -1 || true)"
+  [[ -n "$f" && -f "$f" ]] || return 1
+  echo "$f"
+}
+
+gp_ssl_abs() {
+  readlink -f "$1" 2>/dev/null || realpath "$1" 2>/dev/null || echo "$1"
 }
 
 # Stellt live/ aus archive/ wieder her und kopiert nach deploy — OHNE certbot
 gp_ssl_recover_from_archive() {
   local dir="$1"
   local domain="$2"
-  local arch="/etc/letsencrypt/archive/${domain}"
-  local fullchain privkey live
+  local fullchain privkey live abs_full abs_key
 
-  fullchain="$(gp_ssl_archive_latest "$domain" fullchain || true)"
-  privkey="$(gp_ssl_archive_latest "$domain" privkey || true)"
-  if [[ -z "${fullchain:-}" || -z "${privkey:-}" || ! -f "$fullchain" || ! -f "$privkey" ]]; then
-    return 1
-  fi
+  fullchain="$(gp_ssl_archive_latest "$domain" fullchain)" || return 1
+  privkey="$(gp_ssl_archive_latest "$domain" privkey)" || return 1
 
+  install -d -m 0755 "$dir"
+  # Direkt nach deploy (Panel nutzt das) — kein certbot nötig
+  install -m 0644 "$fullchain" "${dir}/fullchain.pem"
+  install -m 0644 "$privkey" "${dir}/privkey.pem"
+  echo "letsencrypt" > "${dir}/.ssl_mode"
+
+  # live/ wiederherstellen damit certbot renew später klappt
   live="$(gp_ssl_live_dir "$domain")"
   install -d -m 0755 "$live"
-  # Symlinks wie certbot
-  ln -sfn "$(realpath "$fullchain")" "${live}/fullchain.pem"
-  ln -sfn "$(realpath "$privkey")" "${live}/privkey.pem"
+  abs_full="$(gp_ssl_abs "$fullchain")"
+  abs_key="$(gp_ssl_abs "$privkey")"
+  ln -sfn "$abs_full" "${live}/fullchain.pem"
+  ln -sfn "$abs_key" "${live}/privkey.pem"
   local cert chain
-  cert="$(gp_ssl_archive_latest "$domain" cert || true)"
-  chain="$(gp_ssl_archive_latest "$domain" chain || true)"
-  [[ -n "${cert:-}" && -f "$cert" ]] && ln -sfn "$(realpath "$cert")" "${live}/cert.pem" || true
-  [[ -n "${chain:-}" && -f "$chain" ]] && ln -sfn "$(realpath "$chain")" "${live}/chain.pem" || true
+  cert="$(gp_ssl_archive_latest "$domain" cert 2>/dev/null || true)"
+  chain="$(gp_ssl_archive_latest "$domain" chain 2>/dev/null || true)"
+  [[ -n "${cert:-}" && -f "$cert" ]] && ln -sfn "$(gp_ssl_abs "$cert")" "${live}/cert.pem" || true
+  [[ -n "${chain:-}" && -f "$chain" ]] && ln -sfn "$(gp_ssl_abs "$chain")" "${live}/chain.pem" || true
 
-  gp_warn "Let's Encrypt aus Archive wiederhergestellt: ${fullchain}"
-  gp_ssl_install_from_live "$dir" "$domain"
+  cat > "${dir}/README.txt" <<EOF
+GamePanel SSL certificates
+Updated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Mode: letsencrypt (recovered from archive — no new issuance)
+Domain: ${domain}
+Source: ${fullchain}
+Issuer: $(openssl x509 -in "${dir}/fullchain.pem" -noout -issuer 2>/dev/null || echo unknown)
+NotAfter: $(openssl x509 -in "${dir}/fullchain.pem" -noout -enddate 2>/dev/null || echo unknown)
+EOF
+
+  gp_ok "Let's Encrypt aus Archive wiederhergestellt → ${dir}"
+  gp_ssl_print_identity "$dir"
   gp_ssl_setup_renew_hook "$domain" "$dir"
   return 0
 }
 
-# Falls live-Domain-Ordner fehlt: irgendeine Domain mit Archive-Certs
+# Domain mit Archive-Certs finden (exakte Domain zuerst)
 gp_ssl_discover_archive_domain() {
-  local want="$1" d
-  if [[ -d "/etc/letsencrypt/archive/${want}" ]] \
-    && gp_ssl_archive_latest "$want" fullchain >/dev/null 2>&1 \
-    && gp_ssl_archive_latest "$want" privkey >/dev/null 2>&1; then
+  local want="$1" d f
+  f="$(gp_ssl_archive_latest "$want" fullchain 2>/dev/null || true)"
+  if [[ -n "$f" ]] && gp_ssl_archive_latest "$want" privkey >/dev/null 2>&1; then
     echo "$want"
     return 0
   fi
@@ -105,8 +126,8 @@ gp_ssl_discover_archive_domain() {
   for d in /etc/letsencrypt/archive/*/; do
     [[ -d "$d" ]] || continue
     d="$(basename "$d")"
-    if gp_ssl_archive_latest "$d" fullchain >/dev/null 2>&1 \
-      && gp_ssl_archive_latest "$d" privkey >/dev/null 2>&1; then
+    f="$(gp_ssl_archive_latest "$d" fullchain 2>/dev/null || true)"
+    if [[ -n "$f" ]] && gp_ssl_archive_latest "$d" privkey >/dev/null 2>&1; then
       echo "$d"
       return 0
     fi
@@ -450,15 +471,19 @@ gp_ssl_require_letsencrypt_deployed() {
   if gp_ssl_is_letsencrypt_file "${dir}/fullchain.pem"; then
     return 0
   fi
+  if [[ -f "${dir}/.ssl_mode" ]] && grep -q 'ratelimit' "${dir}/.ssl_mode"; then
+    gp_warn "SSL: temporäres Self-Signed wegen Rate-Limit — OK fürs Panel bis LE wieder geht"
+    return 0
+  fi
   if gp_ssl_is_selfsigned_file "${dir}/fullchain.pem"; then
-    gp_die "SSL_MODE=letsencrypt, aber deploy/nginx/certs ist noch SELF-SIGNED. Live-Cert prüfen unter /etc/letsencrypt/live/ und Panel-Install erneut ausführen."
+    gp_die "SSL_MODE=letsencrypt, aber deploy/nginx/certs ist noch SELF-SIGNED. Archive prüfen unter /etc/letsencrypt/archive/ und Panel-Install erneut."
   fi
   gp_warn "Zertifikat-Issuer nicht als Let's Encrypt erkannt — bitte manuell prüfen"
 }
 
 # Haupt-Entry: wird bei jedem Panel-Install aufgerufen
 gp_ssl_ensure() {
-  local dir domain mode email live_domain
+  local dir domain mode email live_domain arch_domain
   dir="$(gp_ssl_default_dir)"
   domain="$(gp_ssl_domain)"
   mode="$(gp_ssl_mode)"
@@ -470,11 +495,15 @@ gp_ssl_ensure() {
 
   case "$mode" in
     letsencrypt|acme|le)
+      # 1) live/
       if live_domain="$(gp_ssl_discover_live_domain "$domain")"; then
-        # Rate-Limit-sicher: nur kopieren, kein certbot
-        gp_info "Bestehendes Let's Encrypt gefunden (${live_domain}) — kopiere nach deploy (kein neu ausstellen)"
+        gp_info "Live-Cert gefunden (${live_domain}) — kopiere nach deploy (kein neu ausstellen)"
         gp_ssl_install_from_live "$dir" "$live_domain"
         gp_ssl_setup_renew_hook "$live_domain" "$dir"
+      # 2) archive/ — VOR certbot (Rate-Limit!)
+      elif arch_domain="$(gp_ssl_discover_archive_domain "$domain")"; then
+        gp_info "Archive-Cert gefunden (${arch_domain}) — stelle wieder her (kein certbot)"
+        gp_ssl_recover_from_archive "$dir" "$arch_domain"
       else
         gp_ssl_generate_letsencrypt "$dir" "$domain" "$email"
       fi
