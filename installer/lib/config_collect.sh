@@ -80,9 +80,13 @@ gp_collect_panel_config() {
 gp_collect_image_server_config() {
   local ip
   ip="$(gp_detect_primary_ip)"
-  if [[ "${GP_NON_INTERACTIVE:-0}" != "1" ]]; then
+  if [[ "${GP_NON_INTERACTIVE:-0}" != "1" ]] && [[ -z "$(gp_get_env GAMEPANEL_DEPLOY_TOKEN "")" ]]; then
     gp_prompt_value IMAGE_SERVER_HOST "Öffentliche IP/Hostname dieses Image-Servers" \
       "$(gp_get_env IMAGE_SERVER_HOST "$ip")"
+    gp_prompt_value GAMEPANEL_PANEL_URL "Panel-URL (optional, für Auto-Join)" \
+      "$(gp_get_env GAMEPANEL_PANEL_URL "")"
+    gp_prompt_value GAMEPANEL_DEPLOY_TOKEN "Deploy-Token aus dem Panel (gpd_…, optional)" \
+      "$(gp_get_env GAMEPANEL_DEPLOY_TOKEN "")" 1
   fi
   gp_set_cfg IMAGE_SERVER_HOST "$(gp_get_env IMAGE_SERVER_HOST "$ip")"
   gp_set_cfg GAMEPANEL_IMAGE_SERVER_HOST "$(gp_get_env IMAGE_SERVER_HOST "$ip")"
@@ -97,12 +101,16 @@ gp_collect_node_config() {
 
   if [[ "${GP_NON_INTERACTIVE:-0}" != "1" ]]; then
     gp_prompt_value GAMEPANEL_PANEL_URL "Panel-URL (https://…)" "$(gp_get_env GAMEPANEL_PANEL_URL "")"
-    gp_prompt_value GAMEPANEL_SETUP_TOKEN "Setup-Token vom Panel" "$(gp_get_env GAMEPANEL_SETUP_TOKEN "")" 1
-    gp_prompt_value IMAGE_SERVER_HOST "Image-Server Host/IP" "$(gp_get_env IMAGE_SERVER_HOST "")"
+    if [[ -z "$(gp_get_env GAMEPANEL_DEPLOY_TOKEN "")" ]]; then
+      gp_prompt_value GAMEPANEL_DEPLOY_TOKEN "Deploy-Token aus dem Panel (gpd_…)" \
+        "$(gp_get_env GAMEPANEL_DEPLOY_TOKEN "")" 1
+    fi
+    if [[ -z "$(gp_get_env GAMEPANEL_DEPLOY_TOKEN "")" ]]; then
+      gp_prompt_value GAMEPANEL_SETUP_TOKEN "Legacy Setup-Token (nur Fallback)" \
+        "$(gp_get_env GAMEPANEL_SETUP_TOKEN "")" 1
+      gp_prompt_value IMAGE_SERVER_HOST "Image-Server Host/IP (Legacy)" "$(gp_get_env IMAGE_SERVER_HOST "")"
+    fi
     gp_prompt_value GAMEPANEL_NODE_NAME "Node-Name" "$(gp_get_env GAMEPANEL_NODE_NAME "node-$(hostname -s)")"
-    gp_prompt_value GAMEPANEL_IMAGE_KEY_FROM \
-      "SFTP-Private-Key vom Image-Server (scp: user@host:/etc/gamepanel/keys/node-access) oder leer wenn lokal vorhanden" \
-      "$(gp_get_env GAMEPANEL_IMAGE_KEY_FROM "")"
   fi
 
   gp_set_cfg GAMEPANEL_NODE_IP "$(gp_get_env GAMEPANEL_NODE_IP "$ip")"
@@ -113,15 +121,20 @@ gp_collect_node_config() {
   gp_set_cfg GAMEPANEL_IMAGE_SERVER_SSH_KEY "$(gp_get_env GAMEPANEL_IMAGE_SERVER_SSH_KEY /etc/gamepanel/keys/image-server)"
   gp_set_cfg GAMEPANEL_SOURCE_DIR "$(gp_get_env GAMEPANEL_SOURCE_DIR "$(cd "${INSTALLER_DIR}/.." && pwd)")"
 
-  # Self-signed Panel → TLS-Insecure für Agent
   if [[ "$(gp_get_env GAMEPANEL_PANEL_TLS_INSECURE "")" == "yes" ]] \
     || [[ "$(gp_get_env SSL_MODE selfsigned)" == "selfsigned" ]]; then
     gp_set_cfg GAMEPANEL_PANEL_TLS_INSECURE yes
   fi
 
-  gp_require_cfg GAMEPANEL_PANEL_URL "z.B. ./install.sh --role node --panel-url https://10.0.0.10 --setup-token …"
-  gp_require_cfg GAMEPANEL_SETUP_TOKEN "vom Panel-Install ausgeben / join-Datei"
-  gp_require_cfg IMAGE_SERVER_HOST "oder --image-server-host"
+  gp_require_cfg GAMEPANEL_PANEL_URL "z.B. --panel-url https://10.0.0.10"
+
+  if [[ -n "$(gp_get_env GAMEPANEL_DEPLOY_TOKEN "")" ]]; then
+    return 0
+  fi
+
+  # Legacy Fallback
+  gp_require_cfg GAMEPANEL_SETUP_TOKEN "oder --deploy-token aus dem Panel"
+  gp_require_cfg IMAGE_SERVER_HOST "oder --deploy-token Flow (empfohlen)"
 }
 
 gp_write_node_join_file() {

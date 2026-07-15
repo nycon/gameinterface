@@ -30,3 +30,13 @@ export async function updateNode(id: number, payload: Partial<Node>): Promise<No
 export async function deleteNode(id: number): Promise<void> {
   await apiClient.delete(`/admin/nodes/${id}`)
 }
+
+export async function regenerateNodeDeployToken(id: number): Promise<{
+  deploy_token: string
+  install_command: string
+}> {
+  const { data } = await apiClient.post<{ deploy_token: string; install_command: string }>(
+    `/admin/nodes/${id}/deploy-token`,
+  )
+  return data
+}

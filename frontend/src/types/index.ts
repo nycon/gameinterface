@@ -116,7 +116,9 @@ export interface Node {
 
 export interface CreateNodeResponse {
   node: Node
-  token: string
+  token?: string
+  deploy_token: string
+  install_command: string
 }
 
 export interface ImageServer {
@@ -129,6 +131,13 @@ export interface ImageServer {
   username: string
   public_url?: string | null
   is_active: boolean
+  status?: 'pending' | 'ready' | 'error'
+}
+
+export interface CreateImageServerResponse {
+  image_server: ImageServer
+  deploy_token?: string
+  install_command?: string
 }
 
 export interface ImageVersion {

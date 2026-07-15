@@ -1,5 +1,10 @@
 import apiClient from './client'
-import type { GameImage, ImageServer, PaginatedResponse } from '@/types'
+import type {
+  CreateImageServerResponse,
+  GameImage,
+  ImageServer,
+  PaginatedResponse,
+} from '@/types'
 
 export async function fetchImageServers(page = 1): Promise<PaginatedResponse<ImageServer>> {
   const { data } = await apiClient.get<PaginatedResponse<ImageServer>>('/admin/image-servers', {
@@ -10,16 +15,17 @@ export async function fetchImageServers(page = 1): Promise<PaginatedResponse<Ima
 
 export async function createImageServer(payload: {
   name: string
-  hostname: string
-  protocol: 'sftp' | 'ftps' | 'ftp'
-  port: number
-  base_path: string
-  username: string
+  hostname?: string
+  protocol?: 'sftp' | 'ftps' | 'ftp'
+  port?: number
+  base_path?: string
+  username?: string
   password?: string
   public_url?: string
   is_active?: boolean
-}): Promise<ImageServer> {
-  const { data } = await apiClient.post<ImageServer>('/admin/image-servers', payload)
+  mode?: 'deploy' | 'manual'
+}): Promise<CreateImageServerResponse> {
+  const { data } = await apiClient.post<CreateImageServerResponse>('/admin/image-servers', payload)
   return data
 }
 
@@ -33,6 +39,16 @@ export async function updateImageServer(
 
 export async function deleteImageServer(id: number): Promise<void> {
   await apiClient.delete(`/admin/image-servers/${id}`)
+}
+
+export async function regenerateImageServerDeployToken(id: number): Promise<{
+  deploy_token: string
+  install_command: string
+}> {
+  const { data } = await apiClient.post<{ deploy_token: string; install_command: string }>(
+    `/admin/image-servers/${id}/deploy-token`,
+  )
+  return data
 }
 
 export async function fetchImages(page = 1): Promise<PaginatedResponse<GameImage>> {

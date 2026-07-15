@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Node;
 use App\Services\AuditLogger;
+use App\Services\DeployTokenService;
 use App\Services\NodeAuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,7 @@ class NodeController extends Controller
 {
     public function __construct(
         private readonly NodeAuthService $nodeAuth,
+        private readonly DeployTokenService $deployTokens,
         private readonly AuditLogger $audit,
     ) {}
 
@@ -35,13 +37,20 @@ class NodeController extends Controller
         ]);
 
         $node = Node::query()->create($data + ['status' => 'offline']);
-        $token = $this->nodeAuth->createToken($node, 'bootstrap');
+        $deploy = $this->deployTokens->createFor(
+            $node,
+            DeployTokenService::PURPOSE_NODE,
+            $request->user(),
+        );
 
         $this->audit->log('node.created', $node);
 
         return response()->json([
             'node' => $node,
-            'token' => $token['token'],
+            'deploy_token' => $deploy['token'],
+            'install_command' => $deploy['install_command'],
+            // Legacy field kept for older clients
+            'token' => $deploy['token'],
         ], 201);
     }
 
@@ -90,6 +99,21 @@ class NodeController extends Controller
         return response()->json([
             'token' => $token['token'],
             'name' => $token['model']->name,
+        ], 201);
+    }
+
+    public function createDeployToken(Request $request, Node $node): JsonResponse
+    {
+        $deploy = $this->deployTokens->createFor(
+            $node,
+            DeployTokenService::PURPOSE_NODE,
+            $request->user(),
+        );
+        $this->audit->log('node.deploy_token_created', $node);
+
+        return response()->json([
+            'deploy_token' => $deploy['token'],
+            'install_command' => $deploy['install_command'],
         ], 201);
     }
 }

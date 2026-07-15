@@ -253,7 +253,7 @@ gp_node_pull_image_key() {
       gp_ok "SFTP-Key übernommen"
       return 0
     fi
-    gp_die "scp Key fehlgeschlagen (${from}). SSH-Zugang zu Image-Server prüfen oder Key manuell nach ${key_dest} legen."
+    gp_die "scp Key fehlgeschlagen (${from})."
   fi
 
   local key_file="${GAMEPANEL_IMAGE_SERVER_NODE_PRIVATE_KEY_FILE:-}"
@@ -262,7 +262,25 @@ gp_node_pull_image_key() {
     return 0
   fi
 
-  gp_die "Kein SFTP-Key. Nutze: --pull-image-key root@IMAGE_HOST:/etc/gamepanel/keys/node-access"
+  # Deploy-Token-Flow: Key kommt aus Claim-Antwort — hier nur soft-fail
+  if [[ -n "$(gp_get_env GAMEPANEL_DEPLOY_TOKEN "")" ]]; then
+    gp_info "SFTP-Key folgt aus Panel Claim"
+    return 0
+  fi
+
+  gp_die "Kein SFTP-Key. Empfohlen: Node im Panel anlegen und Deploy-Befehl ausführen."
+}
+
+gp_node_write_sftp_key_from_claim() {
+  local key_pem="$1"
+  local key_dest="${GAMEPANEL_IMAGE_SERVER_SSH_KEY:-/etc/gamepanel/keys/image-server}"
+  local user="${GAMEPANEL_NODE_USER:-gamepanel-node}"
+  [[ -n "$key_pem" && "$key_pem" != "null" ]] || return 0
+  install -d -m 0750 -o root -g "$user" /etc/gamepanel/keys
+  printf '%s\n' "$key_pem" > "$key_dest"
+  chown root:"$user" "$key_dest"
+  chmod 0640 "$key_dest"
+  gp_ok "SFTP-Key vom Panel übernommen"
 }
 
 gp_node_write_config() {
@@ -288,10 +306,6 @@ gp_node_write_config() {
   mysql_pass="$(gp_get_env GAMEPANEL_NODE_MYSQL_PASSWORD "")"
   mysql_host="$(gp_get_env GAMEPANEL_NODE_MYSQL_HOST 127.0.0.1)"
   mysql_port="$(gp_get_env GAMEPANEL_NODE_MYSQL_PORT 3306)"
-
-  if [[ -f "$config" && "${GAMEPANEL_NODE_OVERWRITE_CONFIG:-no}" != "yes" ]]; then
-    gp_info "Agent config.yaml existiert — update Panel-URL/TLS/SFTP…"
-  fi
 
   cat > "$config" <<EOF
 panel:
@@ -368,17 +382,6 @@ EOF
 
   chown "$user:$user" "$config"
   chmod 0640 "$config"
-
-  cat > "${GAMEPANEL_ETC}/node.env" <<ENVEOF
-GAMEPANEL_PANEL_URL=${panel_url}
-GAMEPANEL_NODE_TOKEN=${token}
-GAMEPANEL_NODE_NAME=${name}
-GAMEPANEL_AGENT_CONFIG=${config}
-GAMEPANEL_NODE_MYSQL_USER=${mysql_user}
-GAMEPANEL_NODE_MYSQL_PASSWORD=${mysql_pass}
-GAMEPANEL_PANEL_TLS_INSECURE=$(gp_get_env GAMEPANEL_PANEL_TLS_INSECURE no)
-ENVEOF
-  chmod 0640 "${GAMEPANEL_ETC}/node.env"
 }
 
 gp_node_update_token_in_config() {
@@ -411,30 +414,106 @@ gp_node_test_image_server() {
   host="$(gp_get_env GAMEPANEL_IMAGE_SERVER_HOST "$host")"
   user="$(gp_get_env IMAGE_SERVER_USER gamepanel-images)"
   key="$(gp_get_env GAMEPANEL_IMAGE_SERVER_SSH_KEY /etc/gamepanel/keys/image-server)"
-  [[ -n "$host" ]] || { gp_info "Kein Image-Server — Test übersprungen"; return 0; }
+  [[ -n "$host" && "$host" != "pending" ]] || { gp_info "Kein Image-Server — Test übersprungen"; return 0; }
+  [[ -f "$key" ]] || { gp_warn "SFTP-Key fehlt — Test übersprungen"; return 0; }
 
   gp_info "Teste SFTP zu ${user}@${host}…"
-  local ssh_opts=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new)
-  [[ -f "$key" ]] && ssh_opts+=(-i "$key")
+  local ssh_opts=(-o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -i "$key")
   if ssh "${ssh_opts[@]}" "${user}@${host}" exit 0 2>/dev/null; then
     gp_ok "Image-Server erreichbar"
     return 0
   fi
-  gp_die "Image-Server nicht erreichbar (${user}@${host}). Key/Firewall prüfen."
+  gp_warn "Image-Server nicht erreichbar (${user}@${host}) — später prüfen"
+  return 0
+}
+
+gp_node_claim_deploy() {
+  local panel_url deploy_token hostname ip resp tls_flags=() tls_insecure=false
+  panel_url="$(gp_get_env GAMEPANEL_PANEL_URL "")"
+  deploy_token="$(gp_get_env GAMEPANEL_DEPLOY_TOKEN "")"
+  hostname="$(gp_get_env GAMEPANEL_NODE_HOSTNAME "$(hostname -s)")"
+  ip="$(gp_get_env GAMEPANEL_NODE_IP "")"
+  [[ -n "$ip" ]] || ip="$(gp_detect_primary_ip 2>/dev/null || hostname -I | awk '{print $1}')"
+
+  [[ -n "$panel_url" ]] || gp_die "GAMEPANEL_PANEL_URL fehlt"
+  [[ -n "$deploy_token" ]] || return 1
+
+  [[ "$(gp_get_env GAMEPANEL_PANEL_TLS_INSECURE no)" == "yes" ]] && tls_flags+=(-k) && tls_insecure=true
+
+  local payload agent_ver config_path user
+  agent_ver="$(gp_node_agent_version)"
+  user="${GAMEPANEL_NODE_USER:-gamepanel-node}"
+  config_path="/opt/gamepanel/agent/config.yaml"
+
+  payload=$(jq -n \
+    --arg deploy_token "$deploy_token" \
+    --arg hostname "$hostname" \
+    --arg ip "$ip" \
+    --arg agent_version "$agent_ver" \
+    --argjson tls_insecure "$tls_insecure" \
+    '{deploy_token:$deploy_token, hostname:$hostname, ip_address:$ip, agent_version:$agent_version, tls_insecure:$tls_insecure}')
+
+  gp_info "Claim Node: ${panel_url%/}/api/install/node/claim"
+  if ! resp=$(curl -fsS "${tls_flags[@]}" -X POST "${panel_url%/}/api/install/node/claim" \
+    -H "Content-Type: application/json" \
+    -d "$payload" 2>&1); then
+    gp_die "Node-Claim fehlgeschlagen: ${resp}"
+  fi
+
+  local token yaml key host
+  token="$(echo "$resp" | jq -r '.token // empty')"
+  yaml="$(echo "$resp" | jq -r '.config_yaml // empty')"
+  key="$(echo "$resp" | jq -r '.image_server.private_key // empty')"
+  host="$(echo "$resp" | jq -r '.image_server.host // empty')"
+
+  [[ -n "$token" ]] || gp_die "Kein agent token in Claim-Antwort"
+  [[ -n "$yaml" ]] || gp_die "Kein config_yaml in Claim-Antwort"
+
+  # MariaDB-Passwort in YAML einsetzen
+  local mysql_pass
+  mysql_pass="$(gp_get_env GAMEPANEL_NODE_MYSQL_PASSWORD "")"
+  if [[ -n "$mysql_pass" ]]; then
+    yaml="$(printf '%s\n' "$yaml" | sed "s|__MYSQL_PASSWORD__|${mysql_pass}|g")"
+  else
+    yaml="$(printf '%s\n' "$yaml" | sed 's|__MYSQL_PASSWORD__||g')"
+  fi
+
+  printf '%s\n' "$yaml" > "$config_path"
+  chown "$user:$user" "$config_path"
+  chmod 0640 "$config_path"
+  gp_merge_env_key GAMEPANEL_NODE_TOKEN "$token"
+  [[ -n "$host" && "$host" != "null" ]] && gp_set_cfg IMAGE_SERVER_HOST "$host"
+  gp_node_write_sftp_key_from_claim "$key"
+
+  cat > "${GAMEPANEL_ETC}/node.env" <<ENVEOF
+GAMEPANEL_PANEL_URL=${panel_url}
+GAMEPANEL_NODE_TOKEN=${token}
+GAMEPANEL_AGENT_CONFIG=${config_path}
+GAMEPANEL_NODE_MYSQL_PASSWORD=${mysql_pass}
+GAMEPANEL_PANEL_TLS_INSECURE=$(gp_get_env GAMEPANEL_PANEL_TLS_INSECURE no)
+ENVEOF
+  chmod 0640 "${GAMEPANEL_ETC}/node.env"
+  gp_ok "Node via Deploy-Token geclaimt"
+  return 0
 }
 
 gp_node_register() {
-  local panel_url setup_token name hostname ip bin resp token tls_flags=()
+  # Primär: Deploy-Token Claim
+  if [[ -n "$(gp_get_env GAMEPANEL_DEPLOY_TOKEN "")" ]]; then
+    gp_node_claim_deploy
+    return 0
+  fi
+
+  local panel_url setup_token name hostname ip resp token tls_flags=()
   panel_url="$(gp_get_env GAMEPANEL_PANEL_URL "")"
   setup_token="$(gp_get_env GAMEPANEL_SETUP_TOKEN "")"
   name="$(gp_get_env GAMEPANEL_NODE_NAME "$(hostname -f)")"
   hostname="$(gp_get_env GAMEPANEL_NODE_HOSTNAME "$(hostname -s)")"
   ip="$(gp_get_env GAMEPANEL_NODE_IP "")"
   [[ -n "$ip" ]] || ip="$(gp_detect_primary_ip 2>/dev/null || hostname -I | awk '{print $1}')"
-  bin="${GAMEPANEL_NODE_AGENT_BIN:-/usr/local/bin/gamepanel-agent}"
 
   [[ -n "$panel_url" ]] || gp_die "GAMEPANEL_PANEL_URL fehlt"
-  [[ -n "$setup_token" ]] || gp_die "GAMEPANEL_SETUP_TOKEN fehlt"
+  [[ -n "$setup_token" ]] || gp_die "GAMEPANEL_SETUP_TOKEN oder --deploy-token fehlt"
 
   if [[ -n "$(gp_get_env GAMEPANEL_NODE_TOKEN "")" ]]; then
     gp_info "Node-Token schon gesetzt — Registrierung übersprungen"
@@ -453,7 +532,7 @@ gp_node_register() {
     --arg setup_token "$setup_token" \
     '{name:$name, hostname:$hostname, ip_address:$ip, agent_version:$agent_version, setup_token:$setup_token}')
 
-  gp_info "Registriere Node: ${panel_url%/}/api/node/register"
+  gp_info "Registriere Node (legacy): ${panel_url%/}/api/node/register"
   if ! resp=$(curl -fsS "${tls_flags[@]}" -X POST "${panel_url%/}/api/node/register" \
     -H "Content-Type: application/json" \
     -d "$payload" 2>&1); then
@@ -467,7 +546,7 @@ gp_node_register() {
 }
 
 gp_install_node() {
-  gp_log_info "Start Game-Node Installation (VM3) — production deps"
+  gp_log_info "Start Game-Node Installation — production deps"
   gp_os_require_supported
   gp_node_prechecks
   gp_run_step node_user "Node-Benutzer & Verzeichnisse" gp_node_create_user
@@ -476,11 +555,17 @@ gp_install_node() {
   gp_run_step node_steam "SteamCMD" gp_node_install_steamcmd
   gp_run_step node_verify "Runtime-Verifikation" gp_node_verify_runtimes
   gp_run_step node_agent "GamePanel Agent" gp_node_install_agent
-  gp_run_step node_image_key "SFTP-Schlüssel von Image-Server" gp_node_pull_image_key
-  gp_run_step node_config "Agent config.yaml" gp_node_write_config
-  gp_run_step node_register "Panel-Registrierung" gp_node_register
+
+  if [[ -n "$(gp_get_env GAMEPANEL_DEPLOY_TOKEN "")" ]]; then
+    gp_run_step node_claim "Panel Claim (Deploy-Token)" gp_node_claim_deploy
+  else
+    gp_run_step node_image_key "SFTP-Schlüssel (Legacy)" gp_node_pull_image_key
+    gp_run_step node_config "Agent config.yaml" gp_node_write_config
+    gp_run_step node_register "Panel-Registrierung (Legacy)" gp_node_register
+  fi
+
   gp_run_step node_systemd "Agent systemd Unit" gp_node_systemd
-  gp_run_step node_sftp_test "Image-Server Erreichbarkeit" gp_node_test_image_server
+  gp_run_step node_sftp_test "Image-Server Erreichbarkeit" gp_node_test_image_server || true
   gp_fw_setup_node
   gp_log_info "Game-Node fertig. Prüfen: systemctl status gamepanel-agent"
   gp_msg ""

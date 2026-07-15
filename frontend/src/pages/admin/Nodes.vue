@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { createNode, fetchNodes } from '@/api/nodes'
+import { createNode, fetchNodes, regenerateNodeDeployToken } from '@/api/nodes'
 import { getErrorMessage } from '@/api/client'
 import type { Node } from '@/types'
 
@@ -11,7 +11,10 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const showForm = ref(false)
 const creating = ref(false)
-const createdToken = ref<string | null>(null)
+const regeneratingId = ref<number | null>(null)
+
+const installBox = ref<{ command: string; token: string } | null>(null)
+const copied = ref(false)
 
 const form = ref({
   name: '',
@@ -45,10 +48,12 @@ async function load() {
 async function submitCreate() {
   creating.value = true
   error.value = null
-  createdToken.value = null
   try {
     const response = await createNode(form.value)
-    createdToken.value = response.token
+    installBox.value = {
+      command: response.install_command,
+      token: response.deploy_token,
+    }
     showForm.value = false
     form.value = { name: '', hostname: '', ip_address: '' }
     await load()
@@ -56,6 +61,35 @@ async function submitCreate() {
     error.value = getErrorMessage(err, 'Node konnte nicht erstellt werden')
   } finally {
     creating.value = false
+  }
+}
+
+async function regenerate(id: number) {
+  regeneratingId.value = id
+  error.value = null
+  try {
+    const response = await regenerateNodeDeployToken(id)
+    installBox.value = {
+      command: response.install_command,
+      token: response.deploy_token,
+    }
+  } catch (err) {
+    error.value = getErrorMessage(err, 'Deploy-Token konnte nicht erzeugt werden')
+  } finally {
+    regeneratingId.value = null
+  }
+}
+
+async function copyCommand() {
+  if (!installBox.value) return
+  try {
+    await navigator.clipboard.writeText(installBox.value.command)
+    copied.value = true
+    setTimeout(() => {
+      copied.value = false
+    }, 2000)
+  } catch {
+    error.value = 'Kopieren fehlgeschlagen — Befehl manuell markieren'
   }
 }
 
@@ -67,12 +101,22 @@ onMounted(load)
     <p v-if="error" class="text-sm text-panel-danger">{{ error }}</p>
 
     <div
-      v-if="createdToken"
-      class="border border-panel-warning bg-panel-surface p-4 text-sm"
+      v-if="installBox"
+      class="border border-panel-accent bg-panel-surface p-4 text-sm space-y-3"
     >
-      <p class="font-medium text-panel-warning">Node-Token (nur einmal sichtbar):</p>
-      <code class="mt-2 block break-all font-mono text-xs">{{ createdToken }}</code>
-      <button class="panel-btn-secondary mt-2 text-xs" @click="createdToken = null">Schließen</button>
+      <p class="font-medium text-panel-fg">Node-Installation (wie Pterodactyl)</p>
+      <p class="text-panel-muted text-xs">
+        Auf der Node-VM als root ausführen. Der Token ist nur einmal gültig.
+      </p>
+      <pre class="overflow-x-auto rounded bg-black/40 p-3 font-mono text-xs text-panel-fg">{{ installBox.command }}</pre>
+      <div class="flex flex-wrap gap-2">
+        <button class="panel-btn-primary text-xs" type="button" @click="copyCommand">
+          {{ copied ? 'Kopiert' : 'Befehl kopieren' }}
+        </button>
+        <button class="panel-btn-secondary text-xs" type="button" @click="installBox = null">
+          Schließen
+        </button>
+      </div>
     </div>
 
     <div class="flex justify-end">
@@ -111,6 +155,15 @@ onMounted(load)
       </template>
       <template #cell-last_heartbeat_at="{ value }">
         <span class="font-mono text-xs">{{ value ?? '—' }}</span>
+      </template>
+      <template #actions="{ row }">
+        <button
+          class="panel-btn-secondary text-xs px-2 py-1"
+          :disabled="regeneratingId === row.id"
+          @click="regenerate(row.id)"
+        >
+          {{ regeneratingId === row.id ? '…' : 'Install-Befehl' }}
+        </button>
       </template>
     </DataTable>
   </div>

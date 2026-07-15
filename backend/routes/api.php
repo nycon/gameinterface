@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\Client\FileController;
 use App\Http\Controllers\Api\Client\FtpAccountController;
 use App\Http\Controllers\Api\Client\JobController as ClientJobController;
 use App\Http\Controllers\Api\Client\ServerController as ClientServerController;
+use App\Http\Controllers\Api\Install\DeployController;
 use App\Http\Controllers\Api\Node\AgentController;
 use App\Http\Controllers\Api\Reseller\ResellerServerController;
 use App\Http\Controllers\Api\Reseller\ResellerUserController;
@@ -29,6 +30,12 @@ Route::get('/health', fn () => response()->json([
     'service' => 'gamepanel-api',
     'time' => now()->toIso8601String(),
 ]));
+
+Route::prefix('install')->middleware('throttle:30,1')->group(function () {
+    Route::post('/node/claim', [DeployController::class, 'claimNode']);
+    Route::post('/image-server/claim', [DeployController::class, 'claimImageServer']);
+    Route::post('/image-server/complete', [DeployController::class, 'completeImageServer']);
+});
 
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
@@ -47,9 +54,11 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
 
     Route::apiResource('nodes', NodeController::class);
     Route::post('/nodes/{node}/tokens', [NodeController::class, 'createToken']);
+    Route::post('/nodes/{node}/deploy-token', [NodeController::class, 'createDeployToken']);
 
     Route::apiResource('image-servers', ImageServerController::class);
     Route::post('/image-servers/{image_server}/test', [ImageServerController::class, 'test']);
+    Route::post('/image-servers/{image_server}/deploy-token', [ImageServerController::class, 'createDeployToken']);
 
     Route::apiResource('images', ImageController::class)->except(['update']);
     Route::post('/images/{image}/versions', [ImageController::class, 'storeVersion']);

@@ -109,7 +109,7 @@ Stoppen: `docker compose down`
 
 ## Production-Deployment (3 VMs)
 
-Empfohlener Betrieb: **eine VM pro Rolle**.
+Panel-first wie Pterodactyl — **kein Datei-Kopieren zwischen VMs**.
 
 | VM | Rolle | Beispiel |
 |----|--------|----------|
@@ -117,24 +117,14 @@ Empfohlener Betrieb: **eine VM pro Rolle**.
 | VM2 | Image-Server (SFTP) | `10.0.0.11` |
 | VM3 | Game-Node (Agent + systemd) | `10.0.0.12` |
 
-Alles über Flags — **keine manuelle `.env`-Pflege**:
-
 ```bash
-# VM2 Image-Server
-sudo ./install.sh --role image-server --non-interactive
-
-# VM1 Panel (Secrets, SSL, Admin, Setup-Token automatisch)
+# 1) Nur Panel
 sudo ./install.sh --role panel --non-interactive \
   --domain panel.example.com --ssl-mode selfsigned \
-  --admin-email admin@example.com --admin-password 'StrongPass!2026' \
-  --image-server-host 10.0.0.11
+  --admin-email admin@example.com --admin-password 'StrongPass!2026'
 
-# VM3 Node (SteamCMD, lib32, Java, MariaDB + Agent — alles im Installer)
-scp root@PANEL:/etc/gamepanel/node-join.env /tmp/node-join.env
-sudo ./install.sh --role node --non-interactive \
-  --join-file /tmp/node-join.env \
-  --pull-image-key root@10.0.0.11:/etc/gamepanel/keys/node-access \
-  --tls-insecure
+# 2) Im Panel: Image-Server anlegen → curl-Befehl auf VM2 ausführen
+# 3) Im Panel: Node anlegen → curl-Befehl auf VM3 ausführen
 ```
 
 **Vollständige Anleitung:** [docs/deploy-3vm.md](docs/deploy-3vm.md)

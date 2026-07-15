@@ -333,15 +333,11 @@ gp_install_panel() {
   gp_write_node_join_file
   gp_log_info "Panel-Installation abgeschlossen — ${APP_URL:-$(gp_get_env APP_URL "")}"
   gp_ok "HTTPS aktiv — Zertifikate: ${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs"
-  local img_host
-  img_host="$(gp_get_env IMAGE_SERVER_HOST "$(gp_get_env GAMEPANEL_IMAGE_SERVER_HOST "<VM2_IP>")")"
   gp_msg ""
-  gp_msg "${COLOR_BOLD}=== Nächster Schritt: Game-Node ===${COLOR_RESET}"
-  gp_msg "  Join-Datei: ${GAMEPANEL_ETC}/node-join.env"
-  gp_msg "  scp root@$(gp_detect_primary_ip):${GAMEPANEL_ETC}/node-join.env /tmp/node-join.env"
-  gp_msg "  sudo ./install.sh --role node --non-interactive \\"
-  gp_msg "    --join-file /tmp/node-join.env \\"
-  gp_msg "    --pull-image-key root@${img_host}:/etc/gamepanel/keys/node-access"
+  gp_msg "${COLOR_BOLD}=== Nächste Schritte (Panel-UI) ===${COLOR_RESET}"
+  gp_msg "  1) Im Admin: Image-Server anlegen → Install-Befehl auf VM2 ausführen"
+  gp_msg "  2) Im Admin: Node anlegen → Install-Befehl auf VM3 ausführen"
+  gp_msg "  Panel: ${APP_URL:-$(gp_get_env APP_URL "")}"
   gp_msg ""
 }
 

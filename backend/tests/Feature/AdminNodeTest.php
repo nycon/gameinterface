@@ -34,9 +34,10 @@ class AdminNodeTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('node.name', 'node-01')
-            ->assertJsonStructure(['token']);
+            ->assertJsonStructure(['token', 'deploy_token', 'install_command']);
 
         $this->assertDatabaseHas('nodes', ['name' => 'node-01']);
+        $this->assertDatabaseCount('deploy_tokens', 1);
     }
 
     public function test_customer_cannot_list_nodes(): void

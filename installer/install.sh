@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GamePanel Installer — Haupteinstieg (produktionsreif, Zero-Touch via Flags)
+# GamePanel Installer — Haupteinstieg (Panel-first / Pterodactyl-Style)
 set -euo pipefail
 
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,60 +24,50 @@ GP_JOIN_FILE=""
 
 gp_show_help() {
   cat <<'HELP'
-GamePanel Installer — produktionstauglich, ohne manuelle .env-Pflicht
+GamePanel Installer — Panel-first (wie Pterodactyl)
+
+Empfohlener Ablauf:
+  1) Panel auf VM1 installieren
+  2) Im Panel Image-Server anlegen → angezeigten curl-Befehl auf VM2 ausführen
+  3) Im Panel Node anlegen → angezeigten curl-Befehl auf VM3 ausführen
 
 Verwendung:
   sudo ./install.sh --role ROLE [FLAGS]
 
 Rollen:
-  panel          Panel-VM (Docker + Nginx + SSL + Admin + Setup-Token)
-  image-server   Image-/SFTP-Server
-  node           Game-Node (Agent + SteamCMD + lib32 + Java + MariaDB)
+  panel          Panel-VM (Docker + Nginx + SSL + Admin)
+  image-server   Image-/SFTP-Server (meist via Panel-Deploy-Befehl)
+  node           Game-Node (meist via Panel-Deploy-Befehl)
   panel-local    Dev Panel im Repo (ohne Root)
   standalone     Alles auf einer Maschine
 
 Gemeinsame Flags:
-  --non-interactive          Keine Rückfragen (Defaults/Flags nur)
-  --config DATEI             Optionale Zusätzliche Env (wird gemerged)
-  --join-file DATEI          Join-Datei von anderer VM laden (node-join / image-join)
+  --non-interactive          Keine Rückfragen
+  --config DATEI             Optionale Env
   --doctor                   Systemprüfung
+  --panel-url URL            Panel-URL (Node / Image-Server Deploy)
+  --deploy-token TOKEN       Einmal-Token aus dem Panel (gpd_…)
 
 Panel-Flags:
-  --domain HOST              Domain oder IP (Default: Primär-IP der VM)
+  --domain HOST
   --admin-email EMAIL
-  --admin-password PASS      (sonst automatisch generiert)
-  --ssl-mode MODE            selfsigned (Default) | letsencrypt
-  --image-server-host HOST   IP/Hostname von VM2
+  --admin-password PASS
+  --ssl-mode MODE            selfsigned | letsencrypt
 
-Image-Server-Flags:
-  --image-server-host HOST   Öffentliche Adresse dieses Servers (Default: Primär-IP)
+Node/Image Legacy (nur Fallback):
+  --setup-token / --join-file / --pull-image-key / --image-server-host
 
-Node-Flags:
-  --panel-url URL            https://panel…
-  --setup-token TOKEN        Vom Panel-Install
-  --image-server-host HOST
-  --pull-image-key SPEC      scp-Quelle, z.B. root@10.0.0.11:/etc/gamepanel/keys/node-access
-  --node-name NAME
-  --tls-insecure             Panel mit Self-Signed Zertifikat
-
-Beispiele (3 VMs, Zero-Touch):
-
-  # VM2 Image-Server
-  sudo ./install.sh --role image-server --non-interactive
+Beispiele:
 
   # VM1 Panel
   sudo ./install.sh --role panel --non-interactive \
-    --domain panel.example.com --ssl-mode letsencrypt \
-    --admin-email admin@example.com --admin-password 'StrongPass!2026' \
-    --image-server-host 10.0.0.11
+    --domain panel.example.com --ssl-mode selfsigned \
+    --admin-email admin@example.com --admin-password 'StrongPass!2026'
 
-  # VM3 Node (Token aus Panel-Ausgabe / /etc/gamepanel/node-join.env)
+  # VM2 / VM3 — besser den curl-Befehl aus dem Panel kopieren, oder:
   sudo ./install.sh --role node --non-interactive \
     --panel-url https://panel.example.com \
-    --setup-token 'gps_…' \
-    --image-server-host 10.0.0.11 \
-    --pull-image-key root@10.0.0.11:/etc/gamepanel/keys/node-access \
-    --tls-insecure
+    --deploy-token 'gpd_…' --tls-insecure
 HELP
 }
 
@@ -100,6 +90,7 @@ gp_parse_args() {
         shift 2
         ;;
       --panel-url) gp_set_cfg GAMEPANEL_PANEL_URL "${2:?}"; shift 2 ;;
+      --deploy-token) gp_set_cfg GAMEPANEL_DEPLOY_TOKEN "${2:?}"; shift 2 ;;
       --setup-token) gp_set_cfg GAMEPANEL_SETUP_TOKEN "${2:?}"; shift 2 ;;
       --pull-image-key) gp_set_cfg GAMEPANEL_IMAGE_KEY_FROM "${2:?}"; shift 2 ;;
       --node-name) gp_set_cfg GAMEPANEL_NODE_NAME "${2:?}"; shift 2 ;;
@@ -147,7 +138,6 @@ gp_prepare_role_config() {
     panel-local|standalone|database|worker) ;;
     *) ;;
   esac
-  # Persistieren für Re-Runs / Doctor
   if [[ "$1" != "panel-local" ]]; then
     touch "${GAMEPANEL_ETC}/installer.env"
     gp_merge_env_key GP_ROLE "$1" || true

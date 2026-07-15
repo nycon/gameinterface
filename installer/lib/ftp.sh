@@ -185,6 +185,6 @@ gp_image_server_print_credentials() {
   gp_msg "  Spiele-Pfad:       ${root}/games"
   gp_msg "  Manifest:          ${root}/index.json"
   gp_msg "  Node Private Key:  /etc/gamepanel/keys/node-access"
-  gp_msg "  (Private Key auf VM3 kopieren nach /etc/gamepanel/keys/image-server)"
+  gp_msg "  (wird bei Deploy-Token automatisch ans Panel gemeldet — kein scp nötig)"
   gp_msg ""
 }

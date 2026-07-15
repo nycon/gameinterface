@@ -1,85 +1,67 @@
-# 3-VM Deployment — Zero-Touch (ohne manuelle .env)
+# 3-VM Deployment — Panel-first (wie Pterodactyl)
 
-Alles läuft über `./install.sh` mit Flags. Keine handgeschriebenen `.env`-Dateien nötig — Secrets, Domain/IP, SSL, Admin, Join-Tokens und Keys werden vom Installer erzeugt.
+Kein Kopieren von Join-Dateien oder SSH-Keys zwischen den VMs.  
+Du installierst das Panel, legst Image-Server und Node in der UI an und führst den angezeigten Install-Befehl auf der jeweiligen VM aus.
 
-## Übersicht
+## Reihenfolge
 
-| VM | Rolle | Befehl |
-|----|--------|--------|
-| VM2 | Image-Server | `--role image-server` |
-| VM1 | Panel | `--role panel` |
-| VM3 | Game-Node | `--role node` (+ SteamCMD, lib32, Java, MariaDB) |
+1. **VM1 — Panel**
+2. **VM2 — Image-Server** (Befehl aus Panel)
+3. **VM3 — Game-Node** (Befehl aus Panel)
 
-**Reihenfolge:** Image-Server → Panel → Node
-
-Voraussetzungen: Debian 12 / Ubuntu 24.04, Root, Repo auf jeder VM (git clone oder rsync).
+Voraussetzungen: Debian 12 / Ubuntu 24.04, Root, Internet.
 
 ---
 
-## 1) Image-Server (VM2)
+## 1) Panel (VM1)
 
 ```bash
-cd /opt/gamepanel-src   # oder wohin das Repo lag
-sudo ./install.sh --role image-server --non-interactive
-```
+sudo git clone https://github.com/nycon/gameinterface.git /opt/gamepanel-src
+cd /opt/gamepanel-src
 
-Erzeugt u. a.:
-- SFTP-User + Chroot `/srv/gamepanel-images`
-- Key `/etc/gamepanel/keys/node-access`
-- Join-Datei `/etc/gamepanel/image-server-join.env`
-
----
-
-## 2) Panel (VM1)
-
-```bash
 sudo ./install.sh --role panel --non-interactive \
   --domain panel.example.com \
-  --ssl-mode letsencrypt \
-  --admin-email admin@example.com \
-  --admin-password 'StrongPass!2026' \
-  --image-server-host 10.0.0.11
-```
-
-Ohne Domain (nur IP / Self-Signed):
-
-```bash
-sudo ./install.sh --role panel --non-interactive \
-  --domain 10.0.0.10 \
   --ssl-mode selfsigned \
   --admin-email admin@example.com \
-  --admin-password 'StrongPass!2026' \
-  --image-server-host 10.0.0.11
+  --admin-password 'StrongPass!2026'
 ```
 
-Installer erledigt: Docker, `.env`/Secrets, SSL, Compose-Up, Migrationen, Seed, Admin, **Setup-Token**, Join-Datei `/etc/gamepanel/node-join.env`.
+Panel öffnen → einloggen.
 
 ---
 
-## 3) Game-Node (VM3)
+## 2) Image-Server im Panel anlegen (dann auf VM2)
 
-Vom Panel die Join-Datei kopieren (oder Token aus Panel-Ausgabe nehmen):
+1. Admin → **Image Server** → **Image Server hinzufügen**
+2. Nur einen **Namen** eingeben → Erstellen
+3. Den angezeigten Befehl kopieren und **auf VM2 als root** ausführen, z.B.:
 
 ```bash
-scp root@10.0.0.10:/etc/gamepanel/node-join.env /tmp/node-join.env
-
-sudo ./install.sh --role node --non-interactive \
-  --join-file /tmp/node-join.env \
-  --image-server-host 10.0.0.11 \
-  --pull-image-key root@10.0.0.11:/etc/gamepanel/keys/node-access \
-  --tls-insecure
+curl -fsSL https://panel.example.com/install/image-server/gpd_….sh | sudo bash
 ```
 
-(`--tls-insecure` nur bei `selfsigned` SSL)
+Der Installer setzt SFTP auf und meldet den Private Key automatisch ans Panel. Kein `scp`.
 
-**Node-Installer installiert automatisch:**
-- i386 / **lib32** (Steam)
-- **SteamCMD** unter `/opt/gamepanel/steamcmd`
-- **Java 21** (+ 17 Fallback) für Minecraft
-- **MariaDB** lokal (Kunden-DBs, User `gamepanel-agent@localhost`)
-- OpenSSH-Client, nftables, Agent, systemd-Unit
-- SFTP-Key vom Image-Server (via `--pull-image-key`)
-- Panel-Registrierung mit Setup-Token
+---
+
+## 3) Node im Panel anlegen (dann auf VM3)
+
+1. Admin → **Nodes** → **Node hinzufügen** (Name, Hostname, IP)
+2. Den angezeigten Befehl **auf VM3 als root** ausführen:
+
+```bash
+curl -fsSL https://panel.example.com/install/node/gpd_….sh | sudo bash
+```
+
+Installiert automatisch: SteamCMD, lib32, Java, MariaDB, Agent — und claimt den Node am Panel (inkl. Image-Server-Credentials).
+
+`--tls-insecure` ist im Auto-Script enthalten (Self-Signed). Bei gültigem Let’s-Encrypt kannst du lokal ohne Flag installieren:
+
+```bash
+sudo ./install.sh --role node --non-interactive \
+  --panel-url https://panel.example.com \
+  --deploy-token 'gpd_…'
+```
 
 ---
 
@@ -87,16 +69,14 @@ sudo ./install.sh --role node --non-interactive \
 
 ```bash
 # Panel
-curl -k https://10.0.0.10/api/health
+curl -k https://PANEL/api/health
 
 # Node
 systemctl status gamepanel-agent
-java -version
-/opt/gamepanel/steamcmd/steamcmd.sh +quit
-mysql -u gamepanel-agent -p"$(grep MYSQL_PASSWORD /etc/gamepanel/node.env | cut -d= -f2-)" -e 'SELECT 1'
+sudo ./install.sh --doctor
 ```
 
-Im UI: Node **online** → Server anlegen → Job `install` → Start.
+Im UI: Node **online** → Server anlegen → installieren → starten.
 
 ---
 
@@ -109,13 +89,8 @@ Im UI: Node **online** → Server anlegen → Job `install` → Start.
 | VM3 | VM2 | 22 |
 | Spieler | VM3 | Game-Ports |
 
-SSH zum Image-Server: Key-basiert, möglichst nur Node-IPs.
-
 ---
 
-## Hilfe
+## Token neu erzeugen
 
-```bash
-./install.sh --help
-sudo ./install.sh --doctor
-```
+Im Panel bei Node bzw. Image-Server auf **Install-Befehl** / **Install** klicken — erzeugt einen neuen Deploy-Token.
