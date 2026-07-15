@@ -23,6 +23,7 @@ import (
 	"github.com/gamepanel/agent/internal/firewall"
 	ftpaccount "github.com/gamepanel/agent/internal/ftp"
 	"github.com/gamepanel/agent/internal/images"
+	"github.com/gamepanel/agent/internal/minecraft"
 	"github.com/gamepanel/agent/internal/process"
 	"github.com/gamepanel/agent/internal/steamcmd"
 	"github.com/gamepanel/agent/internal/systemd"
@@ -193,17 +194,22 @@ func (h *Handler) Handle(ctx context.Context, job api.Job) error {
 }
 
 type installPayload struct {
-	ManifestRemote string `json:"manifest_remote"`
-	ArchiveRemote  string `json:"archive_remote"`
-	ArchivePath    string `json:"archive_path"`
-	SteamAppID     string `json:"steam_app_id"`
-	MemoryMax      string `json:"memory_max"`
-	CPUPercent     int    `json:"cpu_percent"`
-	Port           int    `json:"port"`
-	Protocol       string `json:"protocol"`
-	StartupCommand string `json:"startup_command"`
-	InstallPath    string `json:"install_path"`
-	LinuxUser      string `json:"linux_user"`
+	ManifestRemote  string `json:"manifest_remote"`
+	ArchiveRemote   string `json:"archive_remote"`
+	ArchivePath     string `json:"archive_path"`
+	SteamAppID      string `json:"steam_app_id"`
+	MemoryMax       string `json:"memory_max"`
+	MemoryMin       string `json:"memory_min"`
+	CPUPercent      int    `json:"cpu_percent"`
+	Port            int    `json:"port"`
+	Protocol        string `json:"protocol"`
+	StartupCommand  string `json:"startup_command"`
+	InstallPath     string `json:"install_path"`
+	LinuxUser       string `json:"linux_user"`
+	TemplateSlug    string `json:"template_slug"`
+	InstallStrategy string `json:"install_strategy"`
+	MinecraftVer    string `json:"minecraft_version"`
+	WorkDir         string `json:"work_dir"`
 }
 
 func (h *Handler) handleInstall(ctx context.Context, job api.Job, serverID string) error {
@@ -216,12 +222,14 @@ func (h *Handler) handleInstall(ctx context.Context, job api.Job, serverID strin
 		return fmt.Errorf("payload parsen: %w", err)
 	}
 
-	username, err := h.users.Ensure(serverID)
+	// Numerische ID bevorzugen für Usernamen
+	keyForUser := serverID
+	if id := numericServerID(job); id > 0 {
+		keyForUser = strconv.FormatUint(id, 10)
+	}
+	username, err := h.users.EnsureNamed(keyForUser, payload.LinuxUser)
 	if err != nil {
 		return err
-	}
-	if payload.LinuxUser != "" {
-		username = payload.LinuxUser
 	}
 
 	serverDir, err := h.files.EnsureServerDir(serverID)
@@ -249,6 +257,7 @@ func (h *Handler) handleInstall(ctx context.Context, job api.Job, serverID strin
 		remote = manifest.Archive
 	}
 
+	installedViaArchive := false
 	if remote != "" {
 		result, err := h.images.Download(ctx, images.DownloadRequest{
 			RemotePath: remote,
@@ -259,6 +268,7 @@ func (h *Handler) handleInstall(ctx context.Context, job api.Job, serverID strin
 		}
 		if result.Extracted {
 			serverDir = result.LocalPath
+			installedViaArchive = true
 		}
 	}
 
@@ -272,6 +282,34 @@ func (h *Handler) handleInstall(ctx context.Context, job api.Job, serverID strin
 		}
 	}
 
+	// Minecraft ohne Image: offizielles JAR laden
+	needsMinecraft := !installedViaArchive && payload.SteamAppID == "" && (
+		payload.InstallStrategy == "script" ||
+			minecraft.LooksLikeMinecraft(payload.StartupCommand, payload.TemplateSlug) ||
+			strings.EqualFold(payload.TemplateSlug, "minecraft"))
+	if needsMinecraft {
+		h.log.Info("minecraft install", "dir", serverDir, "version", payload.MinecraftVer)
+		if err := minecraft.Install(ctx, minecraft.InstallRequest{
+			ServerDir: serverDir,
+			Version:   payload.MinecraftVer,
+			JarName:   "server.jar",
+		}); err != nil {
+			return fmt.Errorf("minecraft install: %w", err)
+		}
+	}
+
+	workDir := serverDir
+	if payload.WorkDir != "" && payload.WorkDir != "/server" {
+		// relative work_dir under serverDir
+		if !filepath.IsAbs(payload.WorkDir) {
+			workDir = filepath.Join(serverDir, payload.WorkDir)
+		}
+	}
+	// Legacy "serverfiles" nur wenn vorhanden
+	if _, err := os.Stat(filepath.Join(serverDir, "serverfiles")); err == nil && payload.WorkDir == "" && !needsMinecraft {
+		workDir = filepath.Join(serverDir, "serverfiles")
+	}
+
 	execPath := ""
 	var args []string
 	env := map[string]string{}
@@ -282,19 +320,39 @@ func (h *Handler) handleInstall(ctx context.Context, job api.Job, serverID strin
 			args = parts[1:]
 		}
 	} else if manifest != nil {
-		execPath = filepath.Join(serverDir, manifest.Startup.Executable)
+		execPath = filepath.Join(workDir, manifest.Startup.Executable)
 		args = manifest.Startup.Args
 		env = manifest.Environment
+	}
+
+	if needsMinecraft && (execPath == "" || execPath == "java") {
+		memMin := payload.MemoryMin
+		memMax := payload.MemoryMax
+		if memMin == "" {
+			memMin = "1024M"
+		}
+		if memMax == "" {
+			memMax = "2048M"
+		}
+		execPath = "java"
+		args = []string{"-Xms" + memMin, "-Xmx" + memMax, "-jar", "server.jar", "nogui"}
 	}
 
 	if execPath == "" {
 		return fmt.Errorf("kein startup executable konfiguriert")
 	}
 
+	// Relative jars from workDir
+	if execPath != "java" && !filepath.IsAbs(execPath) && !strings.Contains(execPath, "/") {
+		// keep as-is for PATH binaries
+	}
+
+	_ = h.users.ChownTree(serverDir, username)
+
 	spec := systemd.ServerSpec{
 		ServerID:    serverID,
 		Username:    username,
-		WorkingDir:  filepath.Join(serverDir, "serverfiles"),
+		WorkingDir:  workDir,
 		Executable:  execPath,
 		Args:        args,
 		Environment: env,
@@ -302,15 +360,18 @@ func (h *Handler) handleInstall(ctx context.Context, job api.Job, serverID strin
 		CPUPercent:  payload.CPUPercent,
 		Port:        payload.Port,
 	}
-
 	if err := h.systemd.Install(spec); err != nil {
 		return err
 	}
 
 	if payload.Port > 0 {
+		proto := payload.Protocol
+		if proto == "" {
+			proto = "tcp"
+		}
 		if err := h.firewall.Allow(firewall.Allocation{
 			ServerID: serverID,
-			Protocol: payload.Protocol,
+			Protocol: proto,
 			Port:     payload.Port,
 		}); err != nil {
 			h.log.Warn("firewall-regel fehlgeschlagen", "error", err)

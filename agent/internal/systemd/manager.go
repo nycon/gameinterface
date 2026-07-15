@@ -39,7 +39,9 @@ func NewManager(unitPrefix, slice string) *Manager {
 }
 
 func (m *Manager) UnitName(serverID string) string {
-	return fmt.Sprintf("%s-%s.service", m.unitPrefix, serverID)
+	// systemd erlaubt Bindestriche; Dateiname sanitizen
+	safe := strings.ReplaceAll(serverID, "/", "-")
+	return fmt.Sprintf("%s-%s.service", m.unitPrefix, safe)
 }
 
 func (m *Manager) Install(spec ServerSpec) error {
@@ -175,21 +177,20 @@ RestartSec=5
 KillMode=mixed
 TimeoutStopSec=30
 
-# Hardening
+# Hardening (Java/Games brauchen Schreibzugriff + JIT)
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ReadWritePaths={{ .WorkingDir }}
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+MemoryDenyWriteExecute=false
 SystemCallArchitectures=native
-CapabilityBoundingSet=
-AmbientCapabilities=
 UMask=0027
 
 # Resource limits

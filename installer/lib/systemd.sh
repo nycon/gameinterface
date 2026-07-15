@@ -33,10 +33,10 @@ gp_systemd_write_unit() {
 }
 
 gp_systemd_node_agent_unit() {
-  local user="${GAMEPANEL_NODE_USER:-gamepanel-node}"
   local bin="${GAMEPANEL_NODE_AGENT_BIN:-/usr/local/bin/gamepanel-agent}"
   local config="${GAMEPANEL_AGENT_CONFIG:-/opt/gamepanel/agent/config.yaml}"
   local env_file="${GAMEPANEL_ETC}/node.env"
+  # Agent braucht root für useradd + systemctl (wie Pterodactyl Wings)
   cat <<EOF
 [Unit]
 Description=GamePanel Game Node Agent
@@ -45,8 +45,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=${user}
-Group=${user}
+User=root
+Group=root
 EnvironmentFile=-${env_file}
 ExecStart=${bin} run --config ${config}
 Restart=on-failure
