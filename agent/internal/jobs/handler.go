@@ -772,10 +772,11 @@ func (h *Handler) handleDatabaseDelete(ctx context.Context, job api.Job) (map[st
 
 func (h *Handler) handleFtpSync(_ context.Context, job api.Job) (map[string]any, error) {
 	var payload struct {
-		Action   string `json:"action"`
-		Username string `json:"username"`
-		Password string `json:"password"`
-		HomePath string `json:"home_path"`
+		Action    string `json:"action"`
+		Username  string `json:"username"`
+		Password  string `json:"password"`
+		HomePath  string `json:"home_path"`
+		LinuxUser string `json:"linux_user"`
 	}
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
 		return nil, err
@@ -786,7 +787,7 @@ func (h *Handler) handleFtpSync(_ context.Context, job api.Job) (map[string]any,
 			return nil, err
 		}
 	default:
-		if err := h.ftp.Ensure(payload.Username, payload.Password, payload.HomePath); err != nil {
+		if err := h.ftp.Ensure(payload.Username, payload.Password, payload.HomePath, payload.LinuxUser); err != nil {
 			return nil, err
 		}
 	}

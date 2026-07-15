@@ -20,7 +20,14 @@ class FtpAccountController extends Controller
     {
         Gate::authorize('view', $server);
 
-        return response()->json($server->ftpAccounts);
+        $server->loadMissing('node:id,ip_address,hostname');
+
+        return response()->json([
+            'data' => $server->ftpAccounts,
+            'host' => $server->node?->ip_address,
+            'port' => 22,
+            'protocol' => 'sftp',
+        ]);
     }
 
     public function store(Request $request, Server $server): JsonResponse
@@ -34,7 +41,8 @@ class FtpAccountController extends Controller
 
         $username = $data['username'] ?? ('sftp_s'.$server->id.'_'.Str::lower(Str::random(4)));
         $password = $data['password'] ?? Str::password(20);
-        $home = rtrim((string) $server->install_path, '/').'/serverfiles';
+        // Home = Install-Pfad (Minecraft/CS liegen dort). SFTP-Chroot = Parent (servers/).
+        $home = rtrim((string) $server->install_path, '/') ?: ('/srv/gamepanel/servers/server-'.$server->id);
 
         $account = FtpAccount::query()->create([
             'server_id' => $server->id,
@@ -49,6 +57,7 @@ class FtpAccountController extends Controller
             'payload' => [
                 'server_id' => $server->id,
                 'install_path' => $server->install_path,
+                'linux_user' => $server->linux_user,
                 'username' => $username,
                 'password' => $password,
                 'home_path' => $home,
@@ -58,10 +67,14 @@ class FtpAccountController extends Controller
             'server_id' => $server->id,
         ]);
 
+        $server->loadMissing('node:id,ip_address,hostname');
+
         return response()->json([
             'ftp_account' => $account,
             'password' => $password,
             'protocol' => 'sftp',
+            'host' => $server->node?->ip_address,
+            'port' => 22,
             'job' => $job,
         ], 201);
     }
