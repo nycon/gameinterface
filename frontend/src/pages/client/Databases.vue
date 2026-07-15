@@ -79,8 +79,9 @@ onMounted(load)
 <template>
   <div class="space-y-4">
     <p class="text-sm text-panel-muted">
-      Datenbanken werden auf dem Game-Node angelegt. Über phpMyAdmin (Cookie-Login) siehst du nur
-      deine eigene DB.
+      <strong>So funktioniert es:</strong> Der Agent legt die MariaDB-Datenbank auf dem Game-Node
+      an. phpMyAdmin läuft direkt auf dem Node (Port 8081) — nicht über den Agenten. Der Panel-Link
+      öffnet phpMyAdmin im Browser; du meldest dich mit dem DB-User an und siehst nur diese DB.
       <a
         v-if="phpmyadminUrl"
         :href="phpmyadminUrl"

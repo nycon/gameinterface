@@ -111,6 +111,18 @@ gp_doctor_check_node_runtimes() {
     gp_doctor_fail "MariaDB nicht aktiv (Kunden-DBs)"
   fi
 
+  local pma_port="${GAMEPANEL_PHPMYADMIN_PORT:-8081}"
+  if [[ -f /opt/gamepanel/phpmyadmin/index.php ]]; then
+    gp_doctor_ok "phpMyAdmin Dateien: /opt/gamepanel/phpmyadmin"
+  else
+    gp_doctor_fail "phpMyAdmin fehlt unter /opt/gamepanel/phpmyadmin"
+  fi
+  if ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE ":${pma_port}$"; then
+    gp_doctor_ok "phpMyAdmin Port ${pma_port} lauscht"
+  else
+    gp_doctor_fail "phpMyAdmin Port ${pma_port} nicht offen (nginx?)"
+  fi
+
   if systemctl is-active --quiet gamepanel-agent 2>/dev/null; then
     gp_doctor_ok "gamepanel-agent aktiv"
   else

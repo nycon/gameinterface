@@ -311,6 +311,10 @@ _gp_panel_up() {
   gp_info "Docker Images bauen (backend/frontend)…"
   gp_docker_build "$dir"
   gp_docker_up "$dir"
+  # Nach Start: Certs nochmals syncen (falls Live-LE inzwischen da) + Nginx reload
+  export GAMEPANEL_SSL_DIR="${dir}/deploy/nginx/certs"
+  export GAMEPANEL_PANEL_DIR="$dir"
+  gp_ssl_apply_running
 }
 
 gp_install_panel() {
@@ -333,6 +337,13 @@ gp_install_panel() {
   gp_write_node_join_file
   gp_log_info "Panel-Installation abgeschlossen — ${APP_URL:-$(gp_get_env APP_URL "")}"
   gp_ok "HTTPS aktiv — Zertifikate: ${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs"
+  if [[ "$(gp_ssl_mode)" == "letsencrypt" ]] || [[ "$(gp_ssl_mode)" == "acme" ]]; then
+    if gp_ssl_is_letsencrypt_file "${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs/fullchain.pem"; then
+      gp_ok "Let's Encrypt korrekt eingebunden"
+    else
+      gp_warn "Prüfe Issuer: openssl x509 -in ${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs/fullchain.pem -noout -issuer"
+    fi
+  fi
   gp_msg ""
   gp_msg "${COLOR_BOLD}=== Nächste Schritte (Panel-UI) ===${COLOR_RESET}"
   gp_msg "  1) Im Admin: Image-Server anlegen → Install-Befehl auf VM2 ausführen"

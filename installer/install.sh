@@ -54,22 +54,21 @@ Panel-Flags:
   --admin-email EMAIL
   --admin-password PASS
   --ssl-mode MODE            selfsigned | letsencrypt
-  --fix-ssl                   SSL reparieren (Let's Encrypt neu einbinden + Proxy reload)
 
 Node/Image Legacy (nur Fallback):
   --setup-token / --join-file / --pull-image-key / --image-server-host
 
 Beispiele:
 
-  # VM1 Panel
+  # VM1 Panel (Let's Encrypt — Port 80 muss öffentlich erreichbar sein)
   sudo ./install.sh --role panel --non-interactive \
     --domain panel.example.com --ssl-mode letsencrypt \
     --admin-email admin@example.com --admin-password 'StrongPass!2026'
 
-  # SSL kaputt / Self-Signed statt LE:
-  sudo ./install.sh --role panel --fix-ssl --non-interactive \
+  # Panel erneut: bindet vorhandenes LE-Cert nur neu ein (kein Rate-Limit)
+  sudo ./install.sh --role panel --non-interactive \
     --domain panel.example.com --ssl-mode letsencrypt \
-    --admin-email admin@example.com
+    --admin-email admin@example.com --admin-password 'StrongPass!2026'
 
   # VM2 / VM3 — besser den curl-Befehl aus dem Panel kopieren, oder:
   sudo ./install.sh --role node --non-interactive \
@@ -87,7 +86,12 @@ gp_parse_args() {
       --config) GP_CONFIG_FILE="${2:?}"; shift 2 ;;
       --join-file) GP_JOIN_FILE="${2:?}"; shift 2 ;;
       --doctor) GP_DOCTOR=1; shift ;;
-      --fix-ssl) GP_FIX_SSL=1; shift ;;
+      --fix-ssl)
+        # Legacy: gleiche Wirkung wie normales Panel-Install (SSL-Schritt)
+        gp_warn "--fix-ssl ist veraltet — nutze normales: --role panel --ssl-mode letsencrypt"
+        GP_FIX_SSL=1
+        shift
+        ;;
       --domain) gp_set_cfg PANEL_DOMAIN "${2:?}"; shift 2 ;;
       --admin-email) gp_set_cfg GAMEPANEL_ADMIN_EMAIL "${2:?}"; shift 2 ;;
       --admin-password) gp_set_cfg GAMEPANEL_ADMIN_PASSWORD "${2:?}"; shift 2 ;;
@@ -183,21 +187,14 @@ gp_main() {
     source "${INSTALLER_DIR}/lib/docker.sh"
     export GAMEPANEL_PANEL_DIR="${GAMEPANEL_PANEL_DIR:-$(cd "${INSTALLER_DIR}/.." && pwd)}"
     export GAMEPANEL_SSL_DIR="${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs"
-    # .env des Panels nachladen falls Domain/SSL dort stehen
     if [[ -f "${GAMEPANEL_PANEL_DIR}/.env" ]]; then
       set -a
       # shellcheck disable=SC1091
       source "${GAMEPANEL_PANEL_DIR}/.env" 2>/dev/null || true
       set +a
-      [[ -n "${PANEL_DOMAIN:-}" ]] || PANEL_DOMAIN="$(grep -E '^PANEL_DOMAIN=' "${GAMEPANEL_PANEL_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || true)"
-      [[ -n "${SSL_MODE:-}" ]] || SSL_MODE="$(grep -E '^SSL_MODE=' "${GAMEPANEL_PANEL_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || true)"
-      [[ -n "${SSL_EMAIL:-}" ]] || SSL_EMAIL="$(grep -E '^SSL_EMAIL=' "${GAMEPANEL_PANEL_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || true)"
-      export PANEL_DOMAIN SSL_MODE SSL_EMAIL
-      gp_set_cfg PANEL_DOMAIN "${PANEL_DOMAIN:-$(gp_get_env PANEL_DOMAIN "")}"
-      gp_set_cfg SSL_MODE "${SSL_MODE:-letsencrypt}"
-      gp_set_cfg SSL_EMAIL "${SSL_EMAIL:-$(gp_get_env GAMEPANEL_ADMIN_EMAIL "")}"
     fi
-    gp_ssl_fix
+    gp_set_cfg SSL_MODE "$(gp_get_env SSL_MODE letsencrypt)"
+    gp_ssl_apply_running
     exit 0
   fi
 

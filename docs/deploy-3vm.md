@@ -28,19 +28,11 @@ sudo ./install.sh --role panel --non-interactive \
 
 Panel öffnen → einloggen.
 
-**SSL kaputt (Self-Signed / HSTS-Fehler trotz letsencrypt):** Port 80 muss öffentlich erreichbar sein. Dann:
+Wenn nach der Installation noch ein Self-Signed Cert ausgeliefert wird: Domain und Port 80 prüfen,
+dann denselben Panel-Install-Befehl erneut ausführen. Existiert bereits
+`/etc/letsencrypt/live/<domain>/`, wird **nur kopiert** (kein neues LE-Zertifikat, kein Rate-Limit).
 
-```bash
-cd /opt/gamepanel-src && sudo git pull
-sudo ./install.sh --role panel --fix-ssl --non-interactive \
-  --domain panel.example.com \
-  --ssl-mode letsencrypt \
-  --admin-email admin@example.com
-openssl x509 -in deploy/nginx/certs/fullchain.pem -noout -issuer
-# erwartet: Let's Encrypt — nicht O = GamePanel
-```
-
-Firefox HSTS-Cache leeren: `about:networking#security` → Domain suchen → Delete (oder Website-Daten für die Domain löschen).
+Firefox mit altem HSTS-Cache: `about:networking#security` → Domain löschen.
 
 ---
 
@@ -104,9 +96,16 @@ Kein manuelles Java-/JAR-Setup. Optional danach **Start**.
 
 ## Datenbanken / phpMyAdmin
 
-- Pro Node: MariaDB nur auf `127.0.0.1`, phpMyAdmin auf **Port 8081**
-- Client: Server → **Datenbanken** → Anlegen → **phpMyAdmin** (Login mit DB-User; sieht nur diese DB)
-- Admin: **Datenbanken** → Node-Button für Full-Access (`gamepanel-agent`) oder Passwort+PMA pro DB
+**Architektur:**
+
+1. **Agent** auf dem Node legt MariaDB-DB + User an
+2. **phpMyAdmin** läuft **auf dem Node** (nginx Port 8081) — nicht durch den Agenten getunnelt
+3. Das **Panel** zeigt Link + Zugangsdaten; der Browser öffnet direkt `http://NODE-IP:8081/`
+
+| Wer | Wo | Login |
+|-----|-----|--------|
+| Kunde | Server → Datenbanken → **phpMyAdmin** | eigener DB-User (nur diese DB) |
+| Admin | Admin → **Datenbanken** → Node-Button | `gamepanel-agent` (alle DBs) |
 
 Firewall: Port **8081/tcp** zum Node freigeben (macht der Node-Installer lokal).
 
