@@ -1,0 +1,72 @@
+# GamePanel Node Agent – Beispielkonfiguration
+# Kopieren nach /opt/gamepanel/agent/config.yaml
+
+panel:
+  url: "https://panel.example.com"
+  timeout: 30s
+  tls_insecure: false
+
+node:
+  id: ""
+  token: ""
+  name: "node-01"
+  fqdn: "node01.example.com"
+
+paths:
+  agent_dir: "/opt/gamepanel/agent"
+  servers_dir: "/srv/gamepanel/servers"
+  images_dir: "/srv/gamepanel/images"
+  backups_dir: "/srv/gamepanel/backups"
+  steamcmd_dir: "/opt/gamepanel/steamcmd"
+  logs_dir: "/var/log/gamepanel"
+
+agent:
+  heartbeat_interval: 30s
+  job_poll_interval: 10s
+  data_dir: "/opt/gamepanel/agent/data"
+
+systemd:
+  unit_prefix: "gamepanel-server"
+  slice: "gamepanel.slice"
+
+firewall:
+  backend: "nftables" # nftables | iptables
+  table: "gamepanel"
+  chain: "allocations"
+
+sftp:
+  enabled: true
+  host: ""
+  port: 22
+  username: ""
+  password: ""
+  private_key_path: ""
+  known_hosts_path: ""
+  remote_base: "/images"
+
+ftp:
+  enabled: false
+  host: ""
+  port: 21
+  username: ""
+  password: ""
+  use_tls: true
+  remote_base: "/images"
+
+logging:
+  level: "info" # debug, info, warn, error
+  format: "json" # json, text
+  file: "/var/log/gamepanel/agent.log"
+
+scripts:
+  timeout: 5m
+  allowed_interpreters:
+    - "/bin/bash"
+    - "/bin/sh"
+  sandbox:
+    drop_capabilities: true
+    no_new_privileges: true
+    read_only_paths:
+      - "/usr"
+      - "/lib"
+      - "/lib64"

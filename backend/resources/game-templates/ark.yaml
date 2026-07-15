@@ -1,0 +1,83 @@
+name: "ARK: Survival Evolved"
+slug: "ark"
+type: "steam"
+steam_app_id: "376030"
+
+image:
+  strategy: "steamcmd"
+  archive_format: "tar.zst"
+  image_server_path: "games/ark"
+  exclude_patterns:
+    - "*.log"
+    - "steamapps/**"
+    - "ShooterGame/Saved/**"
+
+install:
+  script: "scripts/modern/steamcmd-update.sh"
+  env:
+    STEAM_APP_ID: "376030"
+  requires:
+    - steamcmd
+    - lib32gcc-s1
+
+update:
+  script: "scripts/modern/steamcmd-update.sh"
+  env:
+    STEAM_APP_ID: "376030"
+    VALIDATE: "1"
+
+runtime:
+  executable: "./ShooterGame/Binaries/Linux/ShooterGameServer"
+  work_dir: "/server"
+  args:
+    - "TheIsland?listen?SessionName={{SERVER_NAME}}?ServerPassword={{SERVER_PASSWORD}}?ServerAdminPassword={{ADMIN_PASSWORD}}?Port={{PORT_GAME}}?QueryPort={{PORT_QUERY}}?RCONPort={{PORT_RCON}}?RCONEnabled=True?MaxPlayers={{MAX_PLAYERS}}"
+    - "-server"
+    - "-log"
+    - "-NoBattlEye"
+  env:
+    LD_LIBRARY_PATH: "."
+
+ports:
+  - name: "game"
+    protocol: "udp"
+    default: 7777
+    required: true
+    description: "Spiel-Port"
+  - name: "query"
+    protocol: "udp"
+    default: 27015
+    required: true
+    description: "Query-Port"
+  - name: "rcon"
+    protocol: "tcp"
+    default: 27020
+    required: false
+    description: "RCON-Port"
+
+variables:
+  - name: "Server Name"
+    env: "SERVER_NAME"
+    default: "GamePanel ARK Server"
+    description: "Session-Name"
+  - name: "Server Password"
+    env: "SERVER_PASSWORD"
+    default: ""
+    description: "Spieler-Passwort (leer = offen)"
+  - name: "Admin Password"
+    env: "ADMIN_PASSWORD"
+    default: ""
+    rules: "required|string|min:8"
+    required: true
+    description: "Admin-Passwort (EnableCheats)"
+  - name: "Map"
+    env: "MAP"
+    default: "TheIsland"
+    description: "ARK-Karte (TheIsland, TheCenter, Ragnarok, ...)"
+  - name: "Max Players"
+    env: "MAX_PLAYERS"
+    default: "70"
+    rules: "integer|min:1|max:100"
+  - name: "Difficulty Offset"
+    env: "DIFFICULTY_OFFSET"
+    default: "0.2"
+    description: "Schwierigkeitsgrad"

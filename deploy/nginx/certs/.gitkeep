@@ -1,0 +1,4 @@
+# Zertifikate für optionalen TLS-Betrieb hier ablegen:
+#   fullchain.pem
+#   privkey.pem
+# Siehe ssl.conf.example

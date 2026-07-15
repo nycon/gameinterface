@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-panel-bg text-panel-text font-sans antialiased;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-panel-bg;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-panel-border rounded;
+  }
+}
+
+@layer components {
+  .panel-sidebar {
+    @apply w-56 shrink-0 border-r border-panel-border bg-panel-surface flex flex-col;
+  }
+
+  .panel-nav-link {
+    @apply flex items-center gap-2.5 px-4 py-2 text-sm text-panel-muted transition-colors border-l-2 border-transparent hover:text-panel-text hover:bg-panel-bg/60;
+  }
+
+  .panel-nav-link.active {
+    @apply text-panel-accent border-panel-accent bg-panel-bg/40;
+  }
+
+  .panel-header {
+    @apply flex items-center justify-between border-b border-panel-border bg-panel-surface px-6 py-3;
+  }
+
+  .panel-content {
+    @apply flex-1 overflow-auto p-6;
+  }
+
+  .panel-table {
+    @apply w-full text-sm border-collapse;
+  }
+
+  .panel-table th {
+    @apply text-left text-xs uppercase tracking-wide text-panel-muted font-medium px-4 py-2 border-b border-panel-border bg-panel-surface;
+  }
+
+  .panel-table td {
+    @apply px-4 py-2.5 border-b border-panel-border/60;
+  }
+
+  .panel-table tr:hover td {
+    @apply bg-panel-surface/50;
+  }
+
+  .panel-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .panel-btn-primary {
+    @apply panel-btn bg-panel-accent text-panel-bg hover:bg-panel-accent-hover;
+  }
+
+  .panel-btn-secondary {
+    @apply panel-btn border border-panel-border text-panel-text hover:border-panel-muted hover:bg-panel-surface;
+  }
+
+  .panel-btn-danger {
+    @apply panel-btn border border-panel-danger/50 text-panel-danger hover:bg-panel-danger/10;
+  }
+
+  .panel-input {
+    @apply w-full rounded border border-panel-border bg-panel-bg px-3 py-2 text-sm text-panel-text placeholder:text-panel-muted focus:border-panel-accent focus:outline-none focus:ring-1 focus:ring-panel-accent/40;
+  }
+
+  .panel-stat {
+    @apply border border-panel-border bg-panel-surface px-4 py-3;
+  }
+
+  .panel-stat-label {
+    @apply text-xs uppercase tracking-wide text-panel-muted;
+  }
+
+  .panel-stat-value {
+    @apply mt-1 text-2xl font-semibold text-panel-text font-mono;
+  }
+}

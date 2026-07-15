@@ -1,0 +1,91 @@
+# Environment & secrets
+.env
+.env.*
+.env.bak
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# PHP / Laravel
+/vendor/
+backend/vendor/
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/storage/*.key
+backend/storage/logs/
+backend/storage/framework/cache/data/
+backend/storage/framework/sessions/
+backend/storage/framework/views/
+backend/bootstrap/cache/*.php
+!backend/bootstrap/cache/.gitkeep
+.phpunit.result.cache
+.php-cs-fixer.cache
+.phpactor.json
+Homestead.json
+Homestead.yaml
+auth.json
+
+# Node / Vue / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+.npm
+.yarn/
+.pnpm-store/
+*.tsbuildinfo
+.nuxt/
+.output/
+.vite/
+
+# Go
+agent/bin/
+agent/gamepanel-agent
+image-builder/bin/
+image-builder/gamepanel-image
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.log
+
+# Build artifacts
+/build/
+/dist/
+*.tar
+*.tar.zst
+*.zip
+*.lst
+*.sha256
+
+# Installer runtime
+installer/installer.env
+/etc/gamepanel/
+
+# Temporary
+tmp/
+temp/
+.cache/

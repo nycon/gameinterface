@@ -1,0 +1,77 @@
+name: "Valheim"
+slug: "valheim"
+type: "steam"
+steam_app_id: "896660"
+
+image:
+  strategy: "steamcmd"
+  archive_format: "tar.zst"
+  image_server_path: "games/valheim"
+  exclude_patterns:
+    - "*.log"
+    - "steamapps/**"
+
+install:
+  script: "scripts/modern/steamcmd-update.sh"
+  env:
+    STEAM_APP_ID: "896660"
+  requires:
+    - steamcmd
+    - lib32gcc-s1
+
+update:
+  script: "scripts/modern/steamcmd-update.sh"
+  env:
+    STEAM_APP_ID: "896660"
+    VALIDATE: "1"
+
+runtime:
+  executable: "./valheim_server.x86_64"
+  work_dir: "/server"
+  args:
+    - "-name"
+    - "{{SERVER_NAME}}"
+    - "-port"
+    - "{{PORT_GAME}}"
+    - "-worldname"
+    - "{{WORLD_NAME}}"
+    - "-password"
+    - "{{SERVER_PASSWORD}}"
+    - "-public"
+    - "{{PUBLIC}}"
+  env:
+    LD_LIBRARY_PATH: "."
+
+ports:
+  - name: "game"
+    protocol: "udp"
+    default: 2456
+    required: true
+    description: "Spiel-Port"
+  - name: "query"
+    protocol: "udp"
+    default: 2457
+    required: true
+    description: "Query-Port"
+
+variables:
+  - name: "Server Name"
+    env: "SERVER_NAME"
+    default: "GamePanel Valheim"
+    description: "Servername in der Serverliste"
+  - name: "World Name"
+    env: "WORLD_NAME"
+    default: "Dedicated"
+    rules: "required|string|alpha_dash"
+    required: true
+    description: "Name der Weltdatei"
+  - name: "Server Password"
+    env: "SERVER_PASSWORD"
+    default: ""
+    rules: "string|min:5"
+    description: "Server-Passwort (leer = öffentlich ohne Passwort)"
+  - name: "Public"
+    env: "PUBLIC"
+    default: "1"
+    rules: "boolean"
+    description: "1 = in Serverliste sichtbar"

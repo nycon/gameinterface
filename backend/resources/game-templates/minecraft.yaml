@@ -1,0 +1,73 @@
+name: "Minecraft Java Edition"
+slug: "minecraft"
+type: "custom"
+steam_app_id: ""
+
+image:
+  strategy: "script"
+  archive_format: "tar.zst"
+  image_server_path: "games/minecraft"
+  exclude_patterns:
+    - "logs/**"
+    - "crash-reports/**"
+    - "world/**"
+
+install:
+  script: "scripts/modern/minecraft-update.sh"
+  env:
+    MINECRAFT_VERSION: "latest"
+    SERVER_JAR: "server.jar"
+  requires:
+    - java17
+
+update:
+  script: "scripts/modern/minecraft-update.sh"
+  env:
+    MINECRAFT_VERSION: "latest"
+    SERVER_JAR: "server.jar"
+
+runtime:
+  executable: "java"
+  work_dir: "/server"
+  args:
+    - "-Xms{{MEMORY_MIN}}"
+    - "-Xmx{{MEMORY_MAX}}"
+    - "-jar"
+    - "server.jar"
+    - "nogui"
+  env:
+    EULA: "TRUE"
+
+ports:
+  - name: "game"
+    protocol: "tcp"
+    default: 25565
+    required: true
+    description: "Minecraft-Server-Port"
+
+variables:
+  - name: "Memory Min"
+    env: "MEMORY_MIN"
+    default: "1024M"
+    description: "Minimale JVM-Heap-Größe"
+  - name: "Memory Max"
+    env: "MEMORY_MAX"
+    default: "2048M"
+    description: "Maximale JVM-Heap-Größe"
+  - name: "Minecraft Version"
+    env: "MINECRAFT_VERSION"
+    default: "latest"
+    description: "Server-Version (latest oder z.B. 1.21.1)"
+  - name: "Server MOTD"
+    env: "MOTD"
+    default: "GamePanel Minecraft Server"
+    description: "Message of the Day"
+  - name: "Max Players"
+    env: "MAX_PLAYERS"
+    default: "20"
+    rules: "integer|min:1|max:100"
+  - name: "Online Mode"
+    env: "ONLINE_MODE"
+    default: "true"
+    rules: "boolean"
+    description: "Mojang-Authentifizierung aktivieren"

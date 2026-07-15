@@ -1,0 +1,131 @@
+openapi: 3.0.3
+info:
+  title: GamePanel API
+  version: 0.1.0
+  description: |
+    REST API for GamePanel — Admin, Client and Node Agent endpoints.
+servers:
+  - url: /api
+tags:
+  - name: Auth
+  - name: Admin
+  - name: Client
+  - name: Node
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and obtain Sanctum token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Token issued
+  /auth/me:
+    get:
+      tags: [Auth]
+      security: [{ sanctum: [] }]
+      summary: Current user
+      responses:
+        "200":
+          description: User profile
+  /admin/nodes:
+    get:
+      tags: [Admin]
+      security: [{ sanctum: [] }]
+      summary: List nodes
+      responses:
+        "200":
+          description: Paginated nodes
+    post:
+      tags: [Admin]
+      security: [{ sanctum: [] }]
+      summary: Create node and bootstrap token
+      responses:
+        "201":
+          description: Node created
+  /admin/image-servers/{id}/test:
+    post:
+      tags: [Admin]
+      security: [{ sanctum: [] }]
+      summary: Test image server configuration
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Connection config valid
+  /client/servers:
+    get:
+      tags: [Client]
+      security: [{ sanctum: [] }]
+      summary: List own servers
+      responses:
+        "200":
+          description: Paginated servers
+  /client/servers/{id}/{action}:
+    post:
+      tags: [Client]
+      security: [{ sanctum: [] }]
+      summary: Power action (start|stop|restart|kill)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+        - in: path
+          name: action
+          required: true
+          schema: { type: string, enum: [start, stop, restart, kill] }
+      responses:
+        "200":
+          description: Job queued
+  /node/register:
+    post:
+      tags: [Node]
+      summary: Register node agent
+      responses:
+        "201":
+          description: Node registered with token
+  /node/heartbeat:
+    post:
+      tags: [Node]
+      security: [{ nodeToken: [] }]
+      summary: Agent heartbeat
+      responses:
+        "200":
+          description: Acknowledged
+  /node/jobs:
+    get:
+      tags: [Node]
+      security: [{ nodeToken: [] }]
+      summary: Claim pending jobs
+      responses:
+        "200":
+          description: Jobs claimed
+components:
+  securitySchemes:
+    sanctum:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+    nodeToken:
+      type: http
+      scheme: bearer
+      bearerFormat: NodeToken

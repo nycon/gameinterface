@@ -1,0 +1,78 @@
+name: "Counter-Strike 2"
+slug: "cs2"
+type: "steam"
+steam_app_id: "730"
+
+image:
+  strategy: "steamcmd"
+  archive_format: "tar.zst"
+  image_server_path: "games/cs2"
+  exclude_patterns:
+    - "*.log"
+    - "steamapps/**"
+
+install:
+  script: "scripts/modern/steamcmd-update.sh"
+  env:
+    STEAM_APP_ID: "730"
+  requires:
+    - steamcmd
+    - lib32gcc-s1
+
+update:
+  script: "scripts/modern/steamcmd-update.sh"
+  env:
+    STEAM_APP_ID: "730"
+    VALIDATE: "1"
+
+runtime:
+  executable: "./game/bin/linuxsteamrt64/cs2"
+  work_dir: "/server"
+  args:
+    - "-dedicated"
+    - "+hostport {{PORT_GAME}}"
+    - "+map {{MAP}}"
+    - "+game_type {{GAME_TYPE}}"
+    - "+game_mode {{GAME_MODE}}"
+  env:
+    LD_LIBRARY_PATH: "./game/bin/linuxsteamrt64:./game/csgo/bin/linuxsteamrt64"
+
+ports:
+  - name: "game"
+    protocol: "udp"
+    default: 27015
+    required: true
+    description: "Spiel-Port (UDP/TCP)"
+  - name: "tv"
+    protocol: "udp"
+    default: 27020
+    required: false
+    description: "SourceTV-Port"
+
+variables:
+  - name: "Server Name"
+    env: "SERVER_NAME"
+    default: "GamePanel CS2 Server"
+    description: "Anzeigename des Servers"
+  - name: "RCON Password"
+    env: "RCON_PASSWORD"
+    default: ""
+    rules: "required|string|min:8"
+    required: true
+    description: "RCON-Passwort"
+  - name: "Map"
+    env: "MAP"
+    default: "de_dust2"
+    description: "Startkarte"
+  - name: "Game Type"
+    env: "GAME_TYPE"
+    default: "0"
+    description: "CS2 game_type"
+  - name: "Game Mode"
+    env: "GAME_MODE"
+    default: "1"
+    description: "CS2 game_mode"
+  - name: "Max Players"
+    env: "MAX_PLAYERS"
+    default: "16"
+    rules: "integer|min:2|max:64"

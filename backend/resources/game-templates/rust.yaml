@@ -1,0 +1,103 @@
+name: "Rust"
+slug: "rust"
+type: "steam"
+steam_app_id: "258550"
+
+image:
+  strategy: "steamcmd"
+  archive_format: "tar.zst"
+  image_server_path: "games/rust"
+  exclude_patterns:
+    - "*.log"
+    - "steamapps/**"
+    - "server/my_server_identity/**"
+
+install:
+  script: "scripts/modern/steamcmd-update.sh"
+  env:
+    STEAM_APP_ID: "258550"
+  requires:
+    - steamcmd
+    - lib32gcc-s1
+
+update:
+  script: "scripts/modern/steamcmd-update.sh"
+  env:
+    STEAM_APP_ID: "258550"
+    VALIDATE: "1"
+
+runtime:
+  executable: "./RustDedicated"
+  work_dir: "/server"
+  args:
+    - "-batchmode"
+    - "+server.port"
+    - "{{PORT_GAME}}"
+    - "+server.queryport"
+    - "{{PORT_QUERY}}"
+    - "+server.hostname"
+    - "{{SERVER_NAME}}"
+    - "+server.identity"
+    - "{{SERVER_IDENTITY}}"
+    - "+server.level"
+    - "{{MAP}}"
+    - "+server.maxplayers"
+    - "{{MAX_PLAYERS}}"
+    - "+server.worldsize"
+    - "{{WORLD_SIZE}}"
+    - "+server.seed"
+    - "{{SEED}}"
+    - "+server.saveinterval"
+    - "300"
+  env:
+    LD_LIBRARY_PATH: "."
+
+ports:
+  - name: "game"
+    protocol: "tcp"
+    default: 28015
+    required: true
+    description: "Spiel-Port"
+  - name: "query"
+    protocol: "udp"
+    default: 28017
+    required: true
+    description: "Query-Port"
+  - name: "rcon"
+    protocol: "tcp"
+    default: 28016
+    required: false
+    description: "RCON-Port"
+
+variables:
+  - name: "Server Name"
+    env: "SERVER_NAME"
+    default: "GamePanel Rust Server"
+    description: "Servername"
+  - name: "Server Identity"
+    env: "SERVER_IDENTITY"
+    default: "rust_server"
+    rules: "required|string|alpha_dash"
+    required: true
+    description: "Eindeutige Server-Identität (Speicherpfad)"
+  - name: "Map"
+    env: "MAP"
+    default: "Procedural Map"
+    description: "Karten-Typ"
+  - name: "Seed"
+    env: "SEED"
+    default: "12345"
+    description: "Welt-Seed"
+  - name: "World Size"
+    env: "WORLD_SIZE"
+    default: "3000"
+    rules: "integer|min:1000|max:6000"
+  - name: "Max Players"
+    env: "MAX_PLAYERS"
+    default: "50"
+    rules: "integer|min:1|max:500"
+  - name: "RCON Password"
+    env: "RCON_PASSWORD"
+    default: ""
+    rules: "string|min:8"
+    description: "RCON-Passwort"
