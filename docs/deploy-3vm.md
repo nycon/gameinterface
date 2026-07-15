@@ -21,12 +21,26 @@ cd /opt/gamepanel-src
 
 sudo ./install.sh --role panel --non-interactive \
   --domain panel.example.com \
-  --ssl-mode selfsigned \
+  --ssl-mode letsencrypt \
   --admin-email admin@example.com \
   --admin-password 'StrongPass!2026'
 ```
 
 Panel öffnen → einloggen.
+
+**SSL kaputt (Self-Signed / HSTS-Fehler trotz letsencrypt):** Port 80 muss öffentlich erreichbar sein. Dann:
+
+```bash
+cd /opt/gamepanel-src && sudo git pull
+sudo ./install.sh --role panel --fix-ssl --non-interactive \
+  --domain panel.example.com \
+  --ssl-mode letsencrypt \
+  --admin-email admin@example.com
+openssl x509 -in deploy/nginx/certs/fullchain.pem -noout -issuer
+# erwartet: Let's Encrypt — nicht O = GamePanel
+```
+
+Firefox HSTS-Cache leeren: `about:networking#security` → Domain suchen → Delete (oder Website-Daten für die Domain löschen).
 
 ---
 
