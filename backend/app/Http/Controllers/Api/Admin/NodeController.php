@@ -40,7 +40,7 @@ class NodeController extends Controller
 
         $node = Node::query()->create($data + [
             'status' => 'offline',
-            'phpmyadmin_url' => 'http://'.$data['ip_address'].':8081/',
+            'phpmyadmin_url' => 'https://'.$data['ip_address'].'/',
         ]);
 
         // Port-Pool vorbereiten (Minecraft 25565+), damit Server-Install ohne manuellen Port läuft

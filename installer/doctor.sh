@@ -111,14 +111,19 @@ gp_doctor_check_node_runtimes() {
     gp_doctor_fail "MariaDB nicht aktiv (Kunden-DBs)"
   fi
 
-  local pma_port="${GAMEPANEL_PHPMYADMIN_PORT:-8081}"
+  local pma_port="${GAMEPANEL_PHPMYADMIN_HTTPS_PORT:-${GAMEPANEL_PHPMYADMIN_PORT:-443}}"
   if [[ -f /opt/gamepanel/phpmyadmin/index.php ]]; then
     gp_doctor_ok "phpMyAdmin Dateien: /opt/gamepanel/phpmyadmin"
   else
     gp_doctor_fail "phpMyAdmin fehlt unter /opt/gamepanel/phpmyadmin"
   fi
+  if [[ -f /etc/gamepanel/phpmyadmin-certs/fullchain.pem ]]; then
+    gp_doctor_ok "phpMyAdmin TLS-Cert vorhanden"
+  else
+    gp_doctor_fail "phpMyAdmin TLS-Cert fehlt (/etc/gamepanel/phpmyadmin-certs)"
+  fi
   if ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE ":${pma_port}$"; then
-    gp_doctor_ok "phpMyAdmin Port ${pma_port} lauscht"
+    gp_doctor_ok "phpMyAdmin HTTPS Port ${pma_port} lauscht"
   else
     gp_doctor_fail "phpMyAdmin Port ${pma_port} nicht offen (nginx?)"
   fi

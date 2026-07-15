@@ -61,8 +61,12 @@ assert "panel_ssl always runs" \
   bash -c "grep -q 'gp_run_step_always panel_ssl' '${ROOT}/installer/install-panel.sh'"
 assert "phpMyAdmin install fn exists" \
   bash -c "grep -q 'gp_node_install_phpmyadmin' '${ROOT}/installer/install-node.sh'"
-assert "firewall opens 8081" \
-  bash -c "grep -q 'PHPMYADMIN_PORT' '${ROOT}/installer/lib/firewall.sh'"
+assert "firewall opens phpMyAdmin HTTPS" \
+  bash -c "grep -q 'phpmyadmin-https\|PHPMYADMIN_HTTPS' '${ROOT}/installer/lib/firewall.sh'"
+assert "phpMyAdmin SSL certs fn" \
+  bash -c "grep -q 'gp_node_pma_ensure_certs' '${ROOT}/installer/install-node.sh'"
+assert "phpMyAdmin ForceSSL / https listen" \
+  bash -c "grep -q 'listen.*ssl' '${ROOT}/installer/install-node.sh'"
 assert "agent creates DB" \
   bash -c "grep -q 'CREATE DATABASE' '${ROOT}/agent/internal/database/manager.go'"
 assert "claim sends phpmyadmin_url" \

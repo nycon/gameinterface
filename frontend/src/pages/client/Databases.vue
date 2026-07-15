@@ -80,7 +80,7 @@ onMounted(load)
   <div class="space-y-4">
     <p class="text-sm text-panel-muted">
       <strong>So funktioniert es:</strong> Der Agent legt die MariaDB-Datenbank auf dem Game-Node
-      an. phpMyAdmin läuft direkt auf dem Node (Port 8081) — nicht über den Agenten. Der Panel-Link
+      an. phpMyAdmin läuft direkt auf dem Node per <strong>HTTPS</strong> — nicht über den Agenten. Der Panel-Link
       öffnet phpMyAdmin im Browser; du meldest dich mit dem DB-User an und siehst nur diese DB.
       <a
         v-if="phpmyadminUrl"

@@ -99,7 +99,7 @@ onMounted(load)
   <div class="space-y-4">
     <p class="text-sm text-panel-muted">
       Kunden-DBs liegen lokal auf dem jeweiligen Game-Node (MariaDB). phpMyAdmin läuft auf dem Node
-      (Port 8081). Kunden sehen nur ihre eigene DB; mit dem Node-Admin-User siehst du alle.
+      (HTTPS). Kunden sehen nur ihre eigene DB; mit dem Node-Admin-User siehst du alle.
     </p>
 
     <div class="flex flex-wrap gap-2">

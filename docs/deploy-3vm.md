@@ -99,15 +99,18 @@ Kein manuelles Java-/JAR-Setup. Optional danach **Start**.
 **Architektur:**
 
 1. **Agent** auf dem Node legt MariaDB-DB + User an
-2. **phpMyAdmin** läuft **auf dem Node** (nginx Port 8081) — nicht durch den Agenten getunnelt
-3. Das **Panel** zeigt Link + Zugangsdaten; der Browser öffnet direkt `http://NODE-IP:8081/`
+2. **phpMyAdmin** läuft **auf dem Node mit HTTPS** (Port 443, HTTP→HTTPS) — nicht durch den Agenten getunnelt
+3. Das **Panel** zeigt Link + Zugangsdaten; der Browser öffnet `https://NODE/` (FQDN empfohlen für Let's Encrypt)
 
 | Wer | Wo | Login |
 |-----|-----|--------|
 | Kunde | Server → Datenbanken → **phpMyAdmin** | eigener DB-User (nur diese DB) |
 | Admin | Admin → **Datenbanken** → Node-Button | `gamepanel-agent` (alle DBs) |
 
-Firewall: Port **8081/tcp** zum Node freigeben (macht der Node-Installer lokal).
+Für **echtes Let's Encrypt** am Node: DNS A-Record auf die Node-IP (Hostname/FQDN), z.B. `node1.example.com`.  
+Ohne Domain: Self-Signed HTTPS (verschlüsselt, Browser-Warnung einmal bestätigen).
+
+Firewall: Port **80/tcp** + **443/tcp** zum Node.
 
 ---
 
@@ -119,7 +122,9 @@ curl -k https://PANEL/api/health
 
 # Node
 systemctl status gamepanel-agent
-curl -I http://NODE-IP:8081/
+curl -Ik https://NODE-IP/
+# oder
+curl -Ik https://node1.example.com/
 sudo ./install.sh --doctor
 ```
 
@@ -135,7 +140,7 @@ Im UI: Node **online** → Minecraft-Server anlegen → installieren → starten
 | VM3 | VM1 | 443 |
 | VM3 | VM2 | 22 |
 | Spieler | VM3 | Game-Ports (z.B. 25565) |
-| Admin/Kunde | VM3 | 8081 (phpMyAdmin) |
+| Admin/Kunde | VM3 | 80/443 (phpMyAdmin HTTPS) |
 
 ---
 

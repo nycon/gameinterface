@@ -76,9 +76,11 @@ gp_fw_setup_image_server() {
 
 gp_fw_setup_node() {
   gp_fw_enable_ssh
-  local agent_port pma_port
+  local agent_port https_port http_port
   agent_port="$(gp_get_env GAMEPANEL_NODE_AGENT_PORT 9100)"
-  pma_port="$(gp_get_env GAMEPANEL_PHPMYADMIN_PORT 8081)"
+  https_port="$(gp_get_env GAMEPANEL_PHPMYADMIN_HTTPS_PORT "$(gp_get_env GAMEPANEL_PHPMYADMIN_PORT 443)")"
+  http_port="$(gp_get_env GAMEPANEL_PHPMYADMIN_HTTP_PORT 80)"
   gp_fw_allow_port "$agent_port" tcp "gamepanel-node-agent"
-  gp_fw_allow_port "$pma_port" tcp "gamepanel-phpmyadmin"
+  gp_fw_allow_port "$http_port" tcp "gamepanel-pma-http"
+  gp_fw_allow_port "$https_port" tcp "gamepanel-phpmyadmin-https"
 }

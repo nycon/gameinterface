@@ -41,7 +41,7 @@ class DatabaseController extends Controller
             'password' => $this->encryption->decrypt($database->password_encrypted),
             'phpmyadmin_url' => $database->server?->node?->phpmyadmin_url
                 ?: ($database->server?->node?->ip_address
-                    ? 'http://'.$database->server->node->ip_address.':8081/'
+                    ? 'https://'.$database->server->node->ip_address.'/'
                     : null),
         ]);
     }
@@ -56,7 +56,7 @@ class DatabaseController extends Controller
         return response()->json([
             'node' => $node->only(['id', 'name', 'ip_address', 'phpmyadmin_url', 'mysql_admin_user']),
             'phpmyadmin_url' => $node->phpmyadmin_url
-                ?: ($node->ip_address ? 'http://'.$node->ip_address.':8081/' : null),
+                ?: ($node->ip_address ? 'https://'.$node->ip_address.'/' : null),
             'username' => $node->mysql_admin_user ?: 'gamepanel-agent',
             'password' => $this->encryption->decrypt($node->mysql_admin_password_encrypted),
         ]);

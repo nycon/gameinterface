@@ -146,20 +146,129 @@ SQL
   getent group mysql >/dev/null && usermod -aG mysql "$user" 2>/dev/null || true
 }
 
-gp_node_install_phpmyadmin() {
-  local port="${GAMEPANEL_PHPMYADMIN_PORT:-8081}"
-  local root="/opt/gamepanel/phpmyadmin"
-  local ip
+gp_node_pma_resolve_domain() {
+  local domain ip host
+  domain="$(gp_get_env GAMEPANEL_PHPMYADMIN_DOMAIN "")"
+  [[ -n "$domain" ]] || domain="$(gp_get_env GAMEPANEL_NODE_FQDN "")"
+  host="$(gp_get_env GAMEPANEL_NODE_HOSTNAME "$(hostname -f 2>/dev/null || hostname -s)")"
   ip="$(gp_get_env GAMEPANEL_NODE_IP "")"
   [[ -n "$ip" ]] || ip="$(gp_detect_primary_ip 2>/dev/null || hostname -I | awk '{print $1}')"
 
-  gp_info "Installiere phpMyAdmin auf Port ${port}…"
-  gp_apt_install nginx php-fpm php-mysql php-mbstring php-xml php-curl unzip curl
+  if [[ -z "$domain" && "$host" == *.* && "$host" != *[[:space:]]* ]]; then
+    case "$host" in
+      [0-9]*.[0-9]*.[0-9]*.[0-9]*) ;; # IPv4 — kein Domain-Name
+      *) domain="$host" ;;
+    esac
+  fi
+  echo "${domain}"
+}
+
+gp_node_pma_ensure_certs() {
+  local domain="$1" ip="$2"
+  local cert_dir="/etc/gamepanel/phpmyadmin-certs"
+  local fullchain="${cert_dir}/fullchain.pem"
+  local privkey="${cert_dir}/privkey.pem"
+  local email mode
+
+  install -d -m 0755 "$cert_dir"
+  email="$(gp_get_env SSL_EMAIL "")"
+  [[ -n "$email" ]] || email="$(gp_get_env GAMEPANEL_ADMIN_EMAIL "")"
+  [[ -n "$email" ]] || email="admin@${domain:-localhost}"
+  mode="$(gp_get_env GAMEPANEL_PHPMYADMIN_SSL_MODE auto)" # auto|letsencrypt|selfsigned
+
+  # Schon gültiges LE aus /etc/letsencrypt übernehmen
+  if [[ -n "$domain" && -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]]; then
+    install -m 0644 "$(readlink -f "/etc/letsencrypt/live/${domain}/fullchain.pem")" "$fullchain"
+    install -m 0644 "$(readlink -f "/etc/letsencrypt/live/${domain}/privkey.pem")" "$privkey"
+    echo "letsencrypt" > "${cert_dir}/.ssl_mode"
+    gp_ok "phpMyAdmin SSL: Let's Encrypt (live) für ${domain}"
+    return 0
+  fi
+
+  if [[ ("$mode" == "auto" || "$mode" == "letsencrypt") && -n "$domain" && "$domain" != "localhost" ]]; then
+    gp_apt_install certbot
+    gp_info "phpMyAdmin: versuche Let's Encrypt für ${domain}…"
+    # nginx ggf. kurz stoppen (Port 80 für ACME)
+    systemctl stop nginx 2>/dev/null || true
+    if certbot certonly --standalone --non-interactive --agree-tos \
+        --email "$email" -d "$domain" --preferred-challenges http 2>/tmp/gp-pma-certbot.log; then
+      install -m 0644 "$(readlink -f "/etc/letsencrypt/live/${domain}/fullchain.pem")" "$fullchain"
+      install -m 0644 "$(readlink -f "/etc/letsencrypt/live/${domain}/privkey.pem")" "$privkey"
+      echo "letsencrypt" > "${cert_dir}/.ssl_mode"
+      # Deploy-Hook: Certs nach Renew kopieren
+      install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
+      cat > /etc/letsencrypt/renewal-hooks/deploy/gamepanel-phpmyadmin.sh <<HOOK
+#!/usr/bin/env bash
+set -euo pipefail
+DOMAIN="${domain}"
+DEST="${cert_dir}"
+LIVE="/etc/letsencrypt/live/\${DOMAIN}"
+if [[ -f "\${LIVE}/fullchain.pem" ]]; then
+  install -m 0644 "\$(readlink -f "\${LIVE}/fullchain.pem")" "\${DEST}/fullchain.pem"
+  install -m 0644 "\$(readlink -f "\${LIVE}/privkey.pem")" "\${DEST}/privkey.pem"
+  systemctl reload nginx 2>/dev/null || true
+fi
+HOOK
+      chmod 0755 /etc/letsencrypt/renewal-hooks/deploy/gamepanel-phpmyadmin.sh
+      gp_ok "phpMyAdmin SSL: Let's Encrypt für ${domain}"
+      return 0
+    fi
+    gp_warn "Let's Encrypt für phpMyAdmin fehlgeschlagen — Self-Signed HTTPS (Traffic trotzdem verschlüsselt)"
+    cat /tmp/gp-pma-certbot.log 2>/dev/null | tail -20 || true
+  fi
+
+  # Self-Signed HTTPS (besser als Plain-HTTP)
+  gp_apt_install openssl
+  local conf
+  conf="$(mktemp)"
+  cat > "$conf" <<EOF
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+x509_extensions = v3_req
+[dn]
+CN = ${domain:-${ip}}
+O = GamePanel Node
+OU = phpMyAdmin
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt
+[alt]
+DNS.1 = ${domain:-localhost}
+DNS.2 = localhost
+IP.1 = ${ip:-127.0.0.1}
+EOF
+  openssl req -x509 -nodes -newkey rsa:2048 \
+    -keyout "$privkey" -out "$fullchain" -days 825 -config "$conf" >/dev/null 2>&1
+  rm -f "$conf"
+  chmod 0644 "$fullchain" "$privkey"
+  echo "selfsigned" > "${cert_dir}/.ssl_mode"
+  gp_ok "phpMyAdmin SSL: Self-Signed HTTPS unter ${cert_dir}"
+}
+
+gp_node_install_phpmyadmin() {
+  local http_port="${GAMEPANEL_PHPMYADMIN_HTTP_PORT:-80}"
+  local https_port="${GAMEPANEL_PHPMYADMIN_HTTPS_PORT:-443}"
+  local root="/opt/gamepanel/phpmyadmin"
+  local cert_dir="/etc/gamepanel/phpmyadmin-certs"
+  local ip domain host url
+
+  ip="$(gp_get_env GAMEPANEL_NODE_IP "")"
+  [[ -n "$ip" ]] || ip="$(gp_detect_primary_ip 2>/dev/null || hostname -I | awk '{print $1}')"
+  host="$(gp_get_env GAMEPANEL_NODE_HOSTNAME "$(hostname -f 2>/dev/null || hostname -s)")"
+  domain="$(gp_node_pma_resolve_domain)"
+
+  gp_info "Installiere phpMyAdmin mit HTTPS (Port ${https_port})…"
+  gp_apt_install nginx php-fpm php-mysql php-mbstring php-xml php-curl unzip curl openssl
 
   local php_sock
   php_sock="$(ls /run/php/php*-fpm.sock 2>/dev/null | head -1 || true)"
   if [[ -z "$php_sock" ]]; then
-    systemctl enable --now php*-fpm 2>/dev/null || systemctl enable --now php8.3-fpm 2>/dev/null || systemctl enable --now php8.2-fpm 2>/dev/null || true
+    systemctl enable --now php8.3-fpm 2>/dev/null || systemctl enable --now php8.2-fpm 2>/dev/null || systemctl enable --now php*-fpm 2>/dev/null || true
     php_sock="$(ls /run/php/php*-fpm.sock 2>/dev/null | head -1 || true)"
   fi
   [[ -n "$php_sock" ]] || gp_die "php-fpm Socket nicht gefunden"
@@ -167,8 +276,8 @@ gp_node_install_phpmyadmin() {
   if [[ ! -f "${root}/index.php" ]]; then
     install -d -m 0755 "$root"
     local tmp="/tmp/phpmyadmin.tar.gz"
-    local url="https://files.phpmyadmin.net/phpMyAdmin/5.2.2/phpMyAdmin-5.2.2-all-languages.tar.gz"
-    if ! curl -fsSL --retry 5 --retry-delay 2 -o "$tmp" "$url"; then
+    local dl="https://files.phpmyadmin.net/phpMyAdmin/5.2.2/phpMyAdmin-5.2.2-all-languages.tar.gz"
+    if ! curl -fsSL --retry 5 --retry-delay 2 -o "$tmp" "$dl"; then
       gp_die "phpMyAdmin-Download fehlgeschlagen"
     fi
     local extract="/tmp/pma-extract"
@@ -184,7 +293,11 @@ gp_node_install_phpmyadmin() {
 
   local blowfish
   blowfish="$(gp_random_secret 32)"
-  cat > "${root}/config.inc.php" <<EOF
+  # blowfish behalten wenn config schon existiert
+  if [[ -f "${root}/config.inc.php" ]] && grep -q "blowfish_secret" "${root}/config.inc.php"; then
+    :
+  else
+    cat > "${root}/config.inc.php" <<EOF
 <?php
 \$cfg['blowfish_secret'] = '${blowfish}';
 \$i = 0;
@@ -193,19 +306,56 @@ gp_node_install_phpmyadmin() {
 \$cfg['Servers'][\$i]['host'] = '127.0.0.1';
 \$cfg['Servers'][\$i]['compress'] = false;
 \$cfg['Servers'][\$i]['AllowNoPassword'] = false;
+\$cfg['ForceSSL'] = true;
 \$cfg['UploadDir'] = '';
 \$cfg['SaveDir'] = '';
 \$cfg['TempDir'] = '/tmp';
 \$cfg['DefaultLang'] = 'de';
 EOF
+  fi
+  # ForceSSL nachziehen
+  if ! grep -q "ForceSSL" "${root}/config.inc.php" 2>/dev/null; then
+    echo "\$cfg['ForceSSL'] = true;" >> "${root}/config.inc.php"
+  fi
   chown -R www-data:www-data "$root" 2>/dev/null || chown -R nginx:nginx "$root" 2>/dev/null || true
   chmod 0640 "${root}/config.inc.php"
 
+  gp_node_pma_ensure_certs "$domain" "$ip"
+
+  local server_names="_"
+  [[ -n "$domain" ]] && server_names="${domain} ${ip} _"
+
   cat > /etc/nginx/sites-available/gamepanel-phpmyadmin <<EOF
+# HTTP → HTTPS (+ ACME)
 server {
-    listen ${port} default_server;
-    listen [::]:${port} default_server;
-    server_name _;
+    listen ${http_port} default_server;
+    listen [::]:${http_port} default_server;
+    server_name ${server_names};
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+    }
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen ${https_port} ssl http2 default_server;
+    listen [::]:${https_port} ssl http2 default_server;
+    server_name ${server_names};
+
+    ssl_certificate     ${cert_dir}/fullchain.pem;
+    ssl_certificate_key ${cert_dir}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_session_cache   shared:PMA_SSL:10m;
+
+    # Kein HSTS bei Self-Signed — sonst Browser-Ausnahme unmöglich
+    # add_header Strict-Transport-Security "max-age=31536000" always;
+
     root ${root};
     index index.php;
     client_max_body_size 64m;
@@ -217,6 +367,7 @@ server {
     location ~ \.php\$ {
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_param HTTPS on;
         fastcgi_pass unix:${php_sock};
     }
 
@@ -226,18 +377,39 @@ server {
 }
 EOF
 
+  install -d -m 0755 /var/www/certbot
   ln -sfn /etc/nginx/sites-available/gamepanel-phpmyadmin /etc/nginx/sites-enabled/gamepanel-phpmyadmin
   rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
   nginx -t
   systemctl enable --now nginx
   systemctl reload nginx || systemctl restart nginx
 
-  local url="http://${ip}:${port}/"
+  if [[ -n "$domain" ]]; then
+    if [[ "${https_port}" == "443" ]]; then
+      url="https://${domain}/"
+    else
+      url="https://${domain}:${https_port}/"
+    fi
+  else
+    if [[ "${https_port}" == "443" ]]; then
+      url="https://${ip}/"
+    else
+      url="https://${ip}:${https_port}/"
+    fi
+  fi
+
   gp_merge_env_key GAMEPANEL_PHPMYADMIN_URL "$url"
-  gp_merge_env_key GAMEPANEL_PHPMYADMIN_PORT "$port"
-  gp_ok "phpMyAdmin: ${url}"
+  gp_merge_env_key GAMEPANEL_PHPMYADMIN_PORT "$https_port"
+  gp_merge_env_key GAMEPANEL_PHPMYADMIN_HTTPS_PORT "$https_port"
+  [[ -n "$domain" ]] && gp_merge_env_key GAMEPANEL_PHPMYADMIN_DOMAIN "$domain"
+  gp_ok "phpMyAdmin HTTPS: ${url}"
+  gp_msg "  Zertifikat: ${cert_dir} (mode=$(cat "${cert_dir}/.ssl_mode" 2>/dev/null || echo unknown))"
   gp_msg "  Kunden: Login mit DB-User/Passwort (sehen nur ihre DB)"
   gp_msg "  Admin:  Login mit gamepanel-agent + Passwort aus /etc/gamepanel/node.env"
+  if [[ -z "$domain" ]]; then
+    gp_warn "Keine FQDN-Domain — Self-Signed. Für Let's Encrypt DNS A auf den Node setzen und"
+    gp_msg "  GAMEPANEL_PHPMYADMIN_DOMAIN=pma.example.com beim Node-Install (oder Node neu installieren)."
+  fi
 }
 
 gp_node_install_steamcmd() {
@@ -649,7 +821,7 @@ gp_install_node() {
   gp_run_step node_user "Node-Benutzer & Verzeichnisse" gp_node_create_user
   gp_run_step node_deps "Runtimes (lib32, Java, MariaDB, Tools)" gp_node_install_deps
   gp_run_step node_mariadb "MariaDB härten + Agent-User" gp_node_configure_mariadb
-  gp_run_step node_pma "phpMyAdmin (Kunden-DBs)" gp_node_install_phpmyadmin
+  gp_run_step_always node_pma "phpMyAdmin HTTPS (Kunden-DBs)" gp_node_install_phpmyadmin
   gp_run_step node_steam "SteamCMD" gp_node_install_steamcmd
   gp_run_step node_verify "Runtime-Verifikation" gp_node_verify_runtimes
   gp_run_step node_agent "GamePanel Agent" gp_node_install_agent
@@ -670,7 +842,7 @@ gp_install_node() {
   gp_msg "  Java:       $(command -v java) ($(java -version 2>&1 | head -1))"
   gp_msg "  SteamCMD:   /opt/gamepanel/steamcmd/steamcmd.sh"
   gp_msg "  MariaDB:    127.0.0.1 (User gamepanel-agent)"
-  gp_msg "  phpMyAdmin: $(gp_get_env GAMEPANEL_PHPMYADMIN_URL http://NODE:8081/)"
+  gp_msg "  phpMyAdmin: $(gp_get_env GAMEPANEL_PHPMYADMIN_URL https://NODE/)"
   gp_msg "  Agent:      systemctl status gamepanel-agent"
 }
 

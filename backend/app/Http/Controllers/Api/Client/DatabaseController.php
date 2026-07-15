@@ -22,7 +22,7 @@ class DatabaseController extends Controller
 
         $server->loadMissing('node:id,ip_address,phpmyadmin_url');
         $phpmyadmin = $server->node?->phpmyadmin_url
-            ?: ($server->node?->ip_address ? 'http://'.$server->node->ip_address.':8081/' : null);
+            ?: ($server->node?->ip_address ? 'https://'.$server->node->ip_address.'/' : null);
 
         return response()->json([
             'data' => $server->databases,
@@ -41,7 +41,7 @@ class DatabaseController extends Controller
             'database' => $database,
             'password' => $this->encryption->decrypt($database->password_encrypted),
             'phpmyadmin_url' => $server->node?->phpmyadmin_url
-                ?: ($server->node?->ip_address ? 'http://'.$server->node->ip_address.':8081/' : null),
+                ?: ($server->node?->ip_address ? 'https://'.$server->node->ip_address.'/' : null),
         ]);
     }
 
