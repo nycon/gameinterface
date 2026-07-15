@@ -323,10 +323,26 @@ gp_install_panel() {
   gp_run_step panel_user "Panel-Systembenutzer" gp_panel_create_user
   gp_run_step panel_docker "Docker installieren" gp_docker_install_packages
   gp_run_step panel_docker_svc "Docker-Dienst aktivieren" gp_docker_configure_service
-  gp_run_step panel_sync "Panel-Quellcode bereitstellen" gp_panel_sync_source
+  # Sync + SSL immer — sonst bleiben kaputte Certs / alter Code wegen Markern
+  gp_run_step_always panel_sync "Panel-Quellcode bereitstellen" gp_panel_sync_source
   gp_run_step panel_env "Panel .env erzeugen" gp_panel_write_env
-  gp_run_step panel_ssl "SSL-Zertifikat erzeugen & einbinden" gp_panel_ssl
-  gp_run_step panel_up "Container bauen & starten" "_gp_panel_up"
+  # SSL_MODE aus Flags in .env nachziehen (auch wenn panel_env übersprungen wurde)
+  if [[ -f "${GAMEPANEL_PANEL_DIR}/.env" ]]; then
+    gp_panel_env_set "${GAMEPANEL_PANEL_DIR}/.env" SSL_MODE "$(gp_get_env SSL_MODE selfsigned)"
+    gp_panel_env_set "${GAMEPANEL_PANEL_DIR}/.env" PANEL_DOMAIN "$(gp_get_env PANEL_DOMAIN "")"
+    gp_panel_env_set "${GAMEPANEL_PANEL_DIR}/.env" SSL_EMAIL "$(gp_get_env SSL_EMAIL "$(gp_get_env GAMEPANEL_ADMIN_EMAIL "")")"
+    gp_panel_env_set "${GAMEPANEL_PANEL_DIR}/.env" APP_URL "$(gp_get_env APP_URL "https://$(gp_get_env PANEL_DOMAIN "")")"
+  fi
+  gp_run_step_always panel_ssl "SSL-Zertifikat erzeugen & einbinden" gp_panel_ssl
+
+  if gp_idempotent_marker panel_up; then
+    gp_info "Container laufen bereits — SSL neu laden"
+    export GAMEPANEL_SSL_DIR="${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs"
+    gp_ssl_apply_running
+  else
+    gp_run_step panel_up "Container bauen & starten" "_gp_panel_up"
+  fi
+
   gp_run_step panel_health "Health-Check" gp_panel_wait_health
   gp_run_step panel_migrate "Migrationen" gp_panel_migrate
   gp_run_step panel_seed "Datenbank seeden" gp_panel_seed
@@ -336,12 +352,23 @@ gp_install_panel() {
   gp_fw_setup_panel "$(gp_get_env HTTP_PORT 80)" "$(gp_get_env HTTPS_PORT 443)"
   gp_write_node_join_file
   gp_log_info "Panel-Installation abgeschlossen — ${APP_URL:-$(gp_get_env APP_URL "")}"
-  gp_ok "HTTPS aktiv — Zertifikate: ${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs"
-  if [[ "$(gp_ssl_mode)" == "letsencrypt" ]] || [[ "$(gp_ssl_mode)" == "acme" ]]; then
-    if gp_ssl_is_letsencrypt_file "${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs/fullchain.pem"; then
+
+  local cert="${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs/fullchain.pem"
+  gp_ok "HTTPS Cert-Pfad: ${cert}"
+  if [[ -f "$cert" ]]; then
+    gp_info "Issuer: $(openssl x509 -in "$cert" -noout -issuer 2>/dev/null || echo unknown)"
+  else
+    gp_die "Cert-Datei fehlt: ${cert}"
+  fi
+  if [[ "$(gp_ssl_mode)" == "letsencrypt" || "$(gp_ssl_mode)" == "acme" || "$(gp_ssl_mode)" == "le" ]]; then
+    if gp_ssl_is_letsencrypt_file "$cert"; then
       gp_ok "Let's Encrypt korrekt eingebunden"
     else
-      gp_warn "Prüfe Issuer: openssl x509 -in ${GAMEPANEL_PANEL_DIR}/deploy/nginx/certs/fullchain.pem -noout -issuer"
+      gp_err "Kein Let's Encrypt Cert in ${cert} (noch Self-Signed oder fehlgeschlagen)"
+      gp_msg "Prüfen: DNS A → Server-IP, Port 80 öffentlich, dann Install erneut."
+      gp_msg "  dig +short $(gp_ssl_domain)"
+      gp_msg "  curl -fsS http://$(gp_ssl_domain)/.well-known/acme-challenge/test || true"
+      gp_die "SSL_MODE=letsencrypt aber Zertifikat ist kein Let's Encrypt."
     fi
   fi
   gp_msg ""

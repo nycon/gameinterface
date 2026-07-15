@@ -141,7 +141,10 @@ gp_ssl_is_selfsigned_file() {
 gp_ssl_is_letsencrypt_file() {
   local crt="$1"
   [[ -f "$crt" ]] || return 1
-  openssl x509 -in "$crt" -noout -issuer 2>/dev/null | grep -qi "Let's Encrypt\|R[0-9]*\|ISRG"
+  local issuer
+  issuer="$(openssl x509 -in "$crt" -noout -issuer 2>/dev/null || true)"
+  # Wichtig: kein R[0-9]* — matched sonst das Wort "issuer" case-insensitive!
+  echo "$issuer" | grep -qiE "Let's Encrypt|ISRG Root|Let's Encrypt Authority"
 }
 
 gp_ssl_release_port80() {

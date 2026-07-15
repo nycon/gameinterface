@@ -91,6 +91,18 @@ gp_run_step() {
   fi
 }
 
+# Immer ausführen (kein Skip durch Marker) — für SSL / Sync
+gp_run_step_always() {
+  local marker="$1" desc="$2" fn="$3"
+  gp_info "$desc"
+  if "$fn"; then
+    gp_set_marker "$marker"
+    gp_ok "$desc"
+  else
+    gp_die "Schritt fehlgeschlagen: $desc"
+  fi
+}
+
 gp_load_config() {
   local cfg="${1:-${GAMEPANEL_ETC}/installer.env}"
   if [[ -f "$cfg" ]]; then
